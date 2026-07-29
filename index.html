@@ -148,9 +148,7 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .gridaxis{flex:0 0 40px;position:relative}
 .gridaxis .gh{position:absolute;left:0;right:6px;top:0;text-align:right;font-size:9px;font-weight:600;
   color:var(--ink-3);transform:translateY(-50%);white-space:nowrap;font-variant-numeric:tabular-nums}
-.gridaxis .gaxis-toggle{position:absolute;left:0;right:0;top:0;text-align:center;font-size:11px;
-  color:var(--lav-deep);cursor:pointer;transform:translateY(-4px)}
-.gridbody{position:relative;flex:1;border-left:1px solid var(--rule);margin-left:8px}
+.gridbody{position:relative;flex:1;border-left:1px solid var(--rule);margin-left:8px;cursor:crosshair}
 .gridline{position:absolute;left:0;right:0;border-top:1px dashed var(--rule);pointer-events:none}
 .gridblock{position:absolute;left:4px;right:4px;border:1px solid var(--stroke);border-radius:8px;
   background:var(--glass-strong);overflow:hidden;cursor:pointer;padding:3px 8px;font-size:11px;
@@ -175,14 +173,36 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .gridnowline{position:absolute;left:-8px;right:0;border-top:2px solid var(--pink-deep);z-index:6;pointer-events:none}
 .gridnowline:before{content:attr(data-lbl);position:absolute;left:0;top:-8px;font-size:8.5px;font-weight:700;
   color:#fff;background:var(--pink-deep);padding:1px 5px;border-radius:99px;white-space:nowrap}
-.gaprollupabs,.pastrollupabs{position:absolute;left:4px;right:4px;display:flex;align-items:center;gap:6px;
-  border-radius:8px;font-size:10px;font-weight:600;color:var(--ink-3);cursor:pointer;padding:2px 8px;overflow:hidden}
-.gaprollupabs{border:1px dashed var(--stroke)}
-.pastrollupabs{border:1px dashed rgba(190,150,140,.2)}
-.gaprollupabs:hover,.pastrollupabs:hover{color:var(--lav-deep);border-color:var(--lav-deep)}
-/* the detail panel: a fixed drawer, opened "to the side" instead of growing a grid block inline */
-.blockdetail{position:fixed;top:0;right:0;height:100vh;width:360px;max-width:92vw;background:var(--bgpage);
-  border-left:1px solid var(--stroke);box-shadow:-10px 0 28px rgba(0,0,0,.14);z-index:200;overflow-y:auto;padding:20px}
+/* the whole elapsed span, folded to one line — no matter how many blocks happened before now,
+   this is one row until you tap it open */
+.pastfold{display:flex;align-items:center;gap:6px;border-radius:8px;border:1px dashed var(--stroke);
+  font-size:10.5px;font-weight:600;color:var(--ink-3);cursor:pointer;padding:6px 10px;margin-bottom:8px}
+.pastfold:hover{color:var(--lav-deep);border-color:var(--lav-deep)}
+.pastfoldbody{margin-bottom:8px;display:flex;flex-direction:column;gap:4px}
+.pastrow{display:flex;align-items:center;gap:8px;border-radius:8px;border:1px solid var(--stroke);
+  background:var(--glass-strong);font-size:11px;padding:5px 10px;cursor:pointer;opacity:.7}
+.pastrow:hover{opacity:1}
+.pastrow.cleared{opacity:.5}
+.pastrow .gfocus{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--ink)}
+/* the current block's fast path into a session — sits in the box itself, no click-to-expand detour */
+.lockbtn{position:absolute;right:4px;top:2px;border:none;background:none;font-size:13px;cursor:pointer;
+  border-radius:6px;padding:1px 4px;line-height:1}
+.lockbtn:hover{background:rgba(0,0,0,.08)}
+/* the live ghost box while dragging across blank calendar space to create a block */
+.creatorghost{position:absolute;left:4px;right:4px;border:1.5px dashed var(--lav-deep);border-radius:8px;
+  background:rgba(220,170,192,.18);font-size:10.5px;font-weight:700;color:var(--lav-deep);
+  display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:7}
+/* the marker for a pending double-click start, waiting on its matching end click */
+.pendingline{position:absolute;left:-8px;right:0;border-top:2px dashed var(--lav-deep);z-index:6;pointer-events:none}
+.pendingline:before{content:attr(data-lbl);position:absolute;left:0;top:-8px;font-size:8.5px;font-weight:700;
+  color:#fff;background:var(--lav-deep);padding:1px 5px;border-radius:99px;white-space:nowrap}
+/* the detail panel now expands in place, covering the rest of the day-shift card instead of
+   sliding out from the side — .blockhost (the card itself) is its positioning parent */
+.blockhost{position:relative}
+.blockdetail{position:absolute;inset:0;background:var(--bgpage);border-radius:var(--r);z-index:20;
+  overflow-y:auto;padding:20px;box-shadow:0 14px 36px rgba(0,0,0,.18);
+  animation:blockExpandIn .18s cubic-bezier(.2,.7,.3,1)}
+@keyframes blockExpandIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
 .bdhead{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .bdactions{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:14px}
 .bdactions select{border:1px solid var(--stroke);border-radius:8px;background:var(--glass);padding:5px 8px;font-size:11px;font:inherit;color:inherit}
@@ -191,7 +211,6 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .bdfocus{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--rule)}
 .bdfocus[contenteditable]:empty:before{content:attr(data-ph);color:var(--ink-3);font-weight:400}
 .bdtasks{margin-bottom:8px}
-@media (max-width:760px){.blockdetail{width: 50vw;vw;max-width:100vw}}
 /* ---------- lock-in focus mode ---------- */
 .focusoverlay{position:fixed;inset:0;background:var(--bgpage);z-index:300;overflow-y:auto;
   display:flex;justify-content:center;padding:32px 20px 60px}
@@ -543,10 +562,9 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .hscols{display:flex;gap:12px;flex-wrap:wrap}
 .hscol{flex:1;min-width:0}
 .hscolhead{font-size:9.5px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;display:flex;align-items:center;gap:4px}
-.hscoladd{flex:0 0 210px;display:flex;flex-direction:column;gap:5px}
-.hscoladd input{border:1px solid var(--stroke);border-radius:8px;background:var(--glass);padding:5px 7px;font-size:11px;font:inherit;color:inherit;width:100%}
-.ritualaddtimes{display:flex;gap:4px}
-.ritualaddtimes input{min-width:0}
+.habitaddquick{display:flex;gap:6px;margin-top:10px}
+.habitaddquick input{flex:1;min-width:0;border:1px solid var(--stroke);border-radius:8px;background:var(--glass);padding:5px 8px;font-size:11px;font:inherit;color:inherit}
+.habitaddquick select{border:1px solid var(--stroke);border-radius:8px;background:var(--glass);padding:5px 6px;font-size:11px;font:inherit;color:inherit}
 .hscompact{display:flex;align-items:center;gap:5px;padding:1.5px 0}
 .hscompact .hsname{flex:1;min-width:0;font-size:10px;font-weight:600;color:var(--ink-2);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -968,11 +986,12 @@ body.touchdragging .dropzone{height:34px;background:rgba(147,173,100,.12)}
       </div>
     </div>
     <div class="col" id="todayColB" ondragover="event.preventDefault()" ondrop="onColDrop(event,1)">
-      <div class="card" id="card-day" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'card-day')">
-        <header draggable="true" ondragstart="onCardDragStart(event,'card-day')" ondragend="onCardDragEnd(event)"><span class="lbl">day shift</span><span class="sub" id="cnt-day"></span></header>
+      <div class="card blockhost" id="card-day" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'card-day')">
+        <header draggable="true" ondragstart="onCardDragStart(event,'card-day')" ondragend="onCardDragEnd(event)"><span class="lbl">day shift</span><span class="sub" id="cnt-day"></span>
+          <button class="btn tiny soft" style="margin-left:8px" onclick="event.stopPropagation();quickCreateBlock()" title="new block, right now">+</button></header>
         <div class="timeline" id="timeline"></div>
+        <div id="blockDetailPanel" class="blockdetail" style="display:none"></div>
       </div>
-      <div id="blockDetailPanel" class="blockdetail" style="display:none"></div>
       <div id="focusOverlay" class="focusoverlay" style="display:none"></div>
       <div class="card" id="intentionsCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'intentionsCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'intentionsCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('intentionsCard')"><span class="lbl">intentions for tomorrow</span><span class="cardchev">▾</span></header>
@@ -1153,7 +1172,12 @@ const DAY_START=360, DAY_END=1320; /* 6:00am – 10:00pm skeleton */
    the full 6am-10pm day under 920px instead of a full 1:1 minute-per-pixel sprawl. */
 const GRID_PX_PER_MIN=0.95;
 const GRID_TOTAL_PX=Math.round((DAY_END-DAY_START)*GRID_PX_PER_MIN);
-function minToPx(min){ return Math.round((min-DAY_START)*GRID_PX_PER_MIN); }
+/* origin defaults to the full day (DAY_START) but the "live" grid for today passes its own
+   origin — see renderTimeline — so folded-past time doesn't cost any vertical space */
+function minToPx(min,origin){ origin=(origin===undefined)?DAY_START:origin; return Math.round((min-origin)*GRID_PX_PER_MIN); }
+function pxToMin(px,origin){ origin=(origin===undefined)?DAY_START:origin; return origin+Math.round(px/GRID_PX_PER_MIN); }
+/* the click/drag snap increment on the calendar */
+function snap15(min){ return Math.round(min/15)*15; }
 const DEFAULT_CATEGORIES=['home','research','admin','self-care','hobbies','school'];
 /* appearance: background/card/text + the app's two accent families (strawberry, matcha), plus
    a small curated set of font stacks — free-text font input isn't offered since a bad value
@@ -1349,10 +1373,13 @@ function addRitualDef(name,start,end){
   const rd={id:'ritual'+Date.now(), name:name, start:start||'12:00', end:end||'13:00'};
   S.ritualDefs.push(rd); save(); return rd;
 }
-function submitAddRitualDef(){
-  const nameEl=document.getElementById('newRitualName'), sEl=document.getElementById('newRitualStart'), eEl=document.getElementById('newRitualEnd');
-  if(!nameEl) return;
-  if(addRitualDef(nameEl.value, sEl&&sEl.value, eEl&&eEl.value)){ nameEl.value=''; render(); toast('Ritual block added — it seeds onto tomorrow’s calendar'); }
+/* the quick way to add a habit under morning or evening — no ritual-block creation UI, just
+   morning/evening always, per how you actually use this */
+function submitAddHabit(){
+  const nameEl=document.getElementById('newHabitName'), selEl=document.getElementById('newHabitRitual');
+  if(!nameEl||!nameEl.value.trim()) return;
+  const r=selEl&&selEl.value?selEl.value:((S.ritualDefs&&S.ritualDefs[0])?S.ritualDefs[0].id:null);
+  if(addRitualItem(r,nameEl.value)){ nameEl.value=''; render(); }
 }
 function delRitualDef(id,ev){
   if(ev) ev.stopPropagation();
@@ -1763,7 +1790,7 @@ function flushSave(){
    only ever sent to api.github.com.
    Push is debounced separately from (and longer than) the local save() debounce above, so a burst
    of edits produces one commit, not one per click. */
-const GH_OWNER='eve-wils', GH_REPO='focus_maxxer', GH_BRANCH='data', GH_PATH='data/state.json';
+const GH_OWNER='eve-wils', GH_REPO='focus_data', GH_BRANCH='main', GH_PATH='state.json';
 const GH_TOKEN_KEY='aura_gh_token';
 const GH_PUSH_DEBOUNCE_MS=2000;
 let ghToken=localStorage.getItem(GH_TOKEN_KEY)||'';
@@ -2190,6 +2217,7 @@ function isViewingToday(){ return vday()===today(); }
 function setViewDay(k){
   viewDay=(k===today())?null:k;
   panelOverride=undefined; manualRollup={}; /* expansion state is per-day; don't carry it across */
+  pendingBlockStart=null; /* a pending double-click start doesn't survive switching days */
   if(daysBetween(today(),vday())>=0) buildGaps(vday());
   save(); render();
 }
@@ -3364,9 +3392,6 @@ function mergeEvents(evs){
     return blockTasksFor(b).length>0||(b.notes&&b.notes.trim());
   });
 }
-/* fills every uncovered stretch of the 6am-10pm skeleton with a filler block sized to the
-   actual gap — not a fixed hourly grid. A 30-minute gap between two real blocks gets a
-   30-minute filler, not a whole empty hour sitting next to a half-empty one. */
 /* Your rituals are fixed points of the day, so they get real blocks on the timeline rather than a
    panel off to the side. Seeded once per day and then yours: move them, rename them, drop other
    things in, or delete one for a day and it stays deleted — routineSeeded is what stops tomorrow's
@@ -3386,62 +3411,20 @@ function ensureRoutineBlocks(k){
   d.routineSeeded=true;
   d.blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
 }
+/* the calendar is blank wherever nothing's scheduled now — no more synthetic filler blocks tiling
+   the whole day. buildGaps is just "seed the routines, and drop any auto:true block a block from
+   before this change might still be carrying" (cheap every-render check, doubles as one-time
+   cleanup of old data with no separate migration needed). */
 function buildGaps(k){
   k=k||vday();
-  /* only ever generate a skeleton for today or a future day — filling in a past day that was
-     never opened would invent blocks that day never actually had */
   if(daysBetween(today(),k)<0) return;
   ensureRoutineBlocks(k);
   const d=day(k);
-  d.blocks=d.blocks.filter(function(b){
-    return !(b.auto&&!blockTasksFor(b,k).length&&!(b.notes&&b.notes.trim())&&!b.focus&&!b.category);
-  });
-  const real=d.blocks.map(function(b){
-    const s=Math.max(DAY_START,toMin(b.start));
-    const e=Math.min(DAY_END,s+blockDur(b));
-    return [s,e];
-  }).filter(function(iv){return iv[1]>iv[0];}).sort(function(a,b){return a[0]-b[0];});
-  const merged=[];
-  real.forEach(function(iv){
-    const last=merged[merged.length-1];
-    if(last&&iv[0]<=last[1]) last[1]=Math.max(last[1],iv[1]);
-    else merged.push(iv.slice());
-  });
-  let cursor=DAY_START;
-  merged.forEach(function(iv){
-    if(iv[0]>cursor) fillGapRange(d,cursor,iv[0],k);
-    cursor=Math.max(cursor,iv[1]);
-  });
-  if(cursor<DAY_END) fillGapRange(d,cursor,DAY_END,k);
+  d.blocks=d.blocks.filter(function(b){return !b.auto;});
   d.blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
 }
-/* how an open stretch gets chunked: snap to the clock hour first, then run whole hours,
-   then leave whatever's left as a short final session. 2:15pm-10pm becomes 2:15-3, 3-4, 4-5 …
-   12:00-2:15pm becomes 12-1, 1-2, 2-2:15. Slivers under MIN_GAP are skipped entirely —
-   a 5-minute strip is not a work session, it's visual noise. */
+/* the shortest a block is allowed to be — also the drag/click snap increment on the calendar */
 const MIN_GAP=15;
-/* a contiguous run of unassigned (empty, auto-filled) blocks totaling at least this many minutes
-   collapses into a single toggle row instead of showing each open hour as its own line */
-const UNASSIGNED_COLLAPSE_MIN=120;
-function fillGapRange(d,from,to,dayKey){
-  if(to-from<MIN_GAP) return;
-  let cur=from;
-  /* ids are day-scoped (not just minute-of-day) so that yesterday's 6am gap block and today's
-     6am gap block never collide — otherwise a task pinned to yesterday's auto-filled block would
-     still turn up "inside" today's identically-numbered block once it regenerates, since
-     blockTasksFor matches purely by block id (see the day-check fix there too). */
-  const dayPrefix=dayKey||vday();
-  while(cur<to){
-    let next;
-    if(cur%60!==0) next=Math.min(to,cur+(60-cur%60)); /* partial leading hour: snap up to the hour */
-    else next=Math.min(to,cur+60);                    /* on the hour: take a whole hour (or what's left) */
-    if(to-next>0&&to-next<MIN_GAP) next=to;           /* would strand a sliver — absorb it into this block */
-    if(next-cur>=MIN_GAP){
-      d.blocks.push({id:'auto'+dayPrefix+'_'+cur, start:fromMin(cur), end:fromMin(next), focus:'', auto:true, notes:'', type:'open', category:null});
-    }
-    cur=next;
-  }
-}
 async function syncCalendar(){
   const st=document.getElementById('syncStatus');
   if(!(window.cowork&&window.cowork.callMcpTool)){
@@ -3465,25 +3448,100 @@ async function syncCalendar(){
   }
 }
 /* legacy entry point — an id="newBlockTime" input was never actually wired into the page, so this
-   was dead code. createBlockAt() below is the real, reachable way to make a new block now (tap an
-   open gap on the timeline); addBlock() is kept only for whatever external caller might still
-   reach for it, now with a sane fallback instead of crashing on a missing element. */
+   was dead code. createBlockAt() below is the real, reachable way to make a new block now
+   (double-click twice on the calendar, drag across it, or the "+" button); addBlock() is kept
+   only for whatever external caller might still reach for it, now with a sane fallback instead
+   of crashing on a missing element. */
 function addBlock(){
   const el=document.getElementById('newBlockTime');
   createBlockAt((el&&el.value)||'12:00',60);
 }
-/* tap-to-create: turns a stretch of open time into a real one-hour focus block starting at
-   startTime. buildGaps() re-derives the filler blocks around whatever's "real" on every render
-   (see the call in day-view render), so pushing just the new block and re-rendering is enough —
-   the rest of the day's open time refills itself around it automatically. */
+/* the one path every creation gesture (double-click-twice, drag, "+") funnels through: a new
+   block at startTime for durMin, opened immediately so setup (name, type, category/tasks)
+   continues right there in the expand view. */
 function createBlockAt(startTime,durMin){
   durMin=durMin||60;
   const id='b'+Date.now();
   day(vday()).blocks.push({id:id, start:startTime, end:fromMin(toMin(startTime)+durMin), focus:'', notes:'', type:'single', category:null});
   day(vday()).blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
+  panelOverride=id;
   save(); render();
-  panelOverride=id; render();
 }
+/* a persistent, guided way in: same createBlockAt everything else uses, just defaulted to "now"
+   (or day start, viewing another day) instead of wherever you clicked. */
+function quickCreateBlock(){
+  const start=fromMin(snap15(isViewingToday()?nowMinutes()%1440:DAY_START));
+  createBlockAt(start,60);
+}
+/* ===================== creating a block by clicking/dragging blank calendar space =====================
+   Two gestures, one destination (createBlockAt): drag across blank time like Google Calendar, or
+   double-click once to mark a start and again to mark an end. Both snap to 15 minutes and both
+   bail out if the pointer actually landed on an existing block — that's its own click target. */
+function gridCanvasHandlers(origin){
+  return 'data-origin="'+origin+'" onmousedown="startCanvasCreate(event)" ontouchstart="startCanvasCreate(event)" ondblclick="onCanvasDblClick(event)"';
+}
+function canvasEventY(ev,el){
+  const rect=el.getBoundingClientRect();
+  const clientY=(ev.touches&&ev.touches[0])?ev.touches[0].clientY:ev.clientY;
+  return clientY-rect.top;
+}
+let canvasDrag=null;
+function startCanvasCreate(ev){
+  if(ev.target.closest('.gridblock')) return;
+  const el=ev.currentTarget;
+  canvasDrag={el:el, origin:parseInt(el.dataset.origin,10), startPx:canvasEventY(ev,el), moved:false};
+  document.addEventListener('mousemove',onCanvasCreateMove);
+  document.addEventListener('mouseup',onCanvasCreateEnd);
+  document.addEventListener('touchmove',onCanvasCreateMove,{passive:false});
+  document.addEventListener('touchend',onCanvasCreateEnd);
+}
+function onCanvasCreateMove(ev){
+  if(!canvasDrag) return;
+  const curPx=canvasEventY(ev,canvasDrag.el);
+  if(!canvasDrag.moved&&Math.abs(curPx-canvasDrag.startPx)<6) return; /* still just a click, not a drag */
+  canvasDrag.moved=true;
+  if(ev.cancelable) ev.preventDefault();
+  let startMin=snap15(pxToMin(canvasDrag.startPx,canvasDrag.origin));
+  let endMin=snap15(pxToMin(curPx,canvasDrag.origin));
+  if(endMin<startMin){ const t=startMin; startMin=endMin; endMin=t; }
+  endMin=Math.max(endMin,startMin+MIN_GAP);
+  canvasDrag.ghostStart=startMin; canvasDrag.ghostEnd=endMin;
+  const el=canvasDrag.el;
+  let ghost=el.querySelector('.creatorghost');
+  if(!ghost){ ghost=document.createElement('div'); ghost.className='creatorghost'; el.appendChild(ghost); }
+  const top=minToPx(startMin,canvasDrag.origin), h=Math.max(16,minToPx(endMin,canvasDrag.origin)-top);
+  ghost.style.top=top+'px'; ghost.style.height=h+'px';
+  ghost.textContent=fromMin(startMin)+'–'+fromMin(endMin);
+}
+function onCanvasCreateEnd(){
+  document.removeEventListener('mousemove',onCanvasCreateMove);
+  document.removeEventListener('mouseup',onCanvasCreateEnd);
+  document.removeEventListener('touchmove',onCanvasCreateMove);
+  document.removeEventListener('touchend',onCanvasCreateEnd);
+  if(!canvasDrag) return;
+  const ghost=canvasDrag.el.querySelector('.creatorghost'); if(ghost) ghost.remove();
+  if(canvasDrag.moved&&canvasDrag.ghostStart!==undefined) createBlockAt(fromMin(canvasDrag.ghostStart),canvasDrag.ghostEnd-canvasDrag.ghostStart);
+  canvasDrag=null;
+}
+let pendingBlockStart=null;
+function onCanvasDblClick(ev){
+  if(ev.target.closest('.gridblock')) return;
+  const el=ev.currentTarget;
+  const origin=parseInt(el.dataset.origin,10);
+  const min=snap15(pxToMin(canvasEventY(ev,el),origin));
+  if(pendingBlockStart===null){
+    pendingBlockStart=min;
+    toast('double-click again to set the end — Escape to cancel');
+    render();
+  }else{
+    let s=pendingBlockStart, e=min;
+    if(e<s){ const t=s; s=e; e=t; }
+    e=Math.max(e,s+MIN_GAP);
+    pendingBlockStart=null;
+    createBlockAt(fromMin(s),e-s);
+  }
+}
+function cancelPendingBlock(){ if(pendingBlockStart!==null){ pendingBlockStart=null; render(); } }
 function delBlock(id){ if(!arm('blk:'+id))return;
   const d=day(vday()); d.blocks=d.blocks.filter(function(b){return b.id!==id;}); armed=null; save(); render(); }
 function blockOf(id){ return day(vday()).blocks.filter(function(b){return b.id===id;})[0]; }
@@ -4205,48 +4263,21 @@ function blockProgressPct(b){
   if(nm>=e) return 100;
   return Math.round((nm-s)/(e-s)*100);
 }
-function fmtDurShort(min){
-  const h=Math.floor(min/60), m=Math.round(min%60);
-  if(h&&m) return h+'h '+m+'m';
-  if(h) return h+'h';
-  return m+'m';
-}
-/* an "unassigned" block is filler time nobody has put anything in — it's not the same as a real
-   block that got fully cleared, so it groups separately (and regardless of whether its time has
-   passed yet — a wide-open afternoon collapses just as readily as a wide-open morning that's
-   already gone by) */
-function isUnassignedBlock(b){ return !!b.auto&&isEmptyBlock(b); }
-/* pure grouping pass over a day's blocks: decides which consecutive runs collapse into a single
-   toggle row (unassigned gaps, and separately cleared-block runs) versus rendering individually.
-   Kept side-effect-free and separate from renderTimeline so it's directly testable. */
+/* pure grouping pass over a day's blocks: every consecutive run of already-past blocks collapses
+   into one toggle row, regardless of how many blocks are in it — "earlier today" is one line
+   until you ask to see it, not one line per block. Kept side-effect-free and separate from
+   renderTimeline so it's directly testable. */
 function groupTimelineSegments(blocks){
   const segs=[];
   let i=0;
   while(i<blocks.length){
     const b=blocks[i];
-    if(isUnassignedBlock(b)){
+    if(isPastBlock(b)){
       let j=i;
-      while(j<blocks.length&&isUnassignedBlock(blocks[j])) j++;
+      while(j<blocks.length&&isPastBlock(blocks[j])) j++;
       const run=blocks.slice(i,j);
-      const totalMin=run.reduce(function(a,bb){return a+blockDur(bb);},0);
-      if(run.length>=2&&totalMin>=UNASSIGNED_COLLAPSE_MIN){
-        segs.push({type:'gap', run:run, totalMin:totalMin});
-        i=j; continue;
-      }
-    }
-    /* every block whose end time has already passed condenses into one toggle, whether or not
-       everything inside it got done — "past" is a clock fact, not a completion fact. This is
-       broader than the old cleared-only grouping (isBlockCleared required 100% done), which is
-       exactly the change phase 1 asked for: a half-finished 9am block still collapses once it's
-       10am, instead of sitting open and demanding attention for something that's already over. */
-    if(isPastBlock(b)&&!isUnassignedBlock(b)){
-      let j=i;
-      while(j<blocks.length&&isPastBlock(blocks[j])&&!isUnassignedBlock(blocks[j])) j++;
-      const run=blocks.slice(i,j);
-      if(run.length>=2){
-        segs.push({type:'past', run:run, totalMin:run.reduce(function(a,bb){return a+blockDur(bb);},0)});
-        i=j; continue;
-      }
+      segs.push({type:'past', run:run, totalMin:run.reduce(function(a,bb){return a+blockDur(bb);},0)});
+      i=j; continue;
     }
     segs.push({type:'block', run:[b]});
     i++;
@@ -4255,17 +4286,35 @@ function groupTimelineSegments(blocks){
 }
 let manualRollup={};
 function toggleRollup(id){ manualRollup[id]=!manualRollup[id]; render(); }
+/* a compact, non-time-proportional row for a folded-past block — once it's behind "now" its exact
+   pixel position stops mattering, you just want to skim what happened and reopen one if needed */
+function pastBlockRowHTML(b){
+  const quests=blockQuests(b), btasks=blockTasksFor(b), ptasks=projectBlockTasks(b);
+  const total=quests.length+btasks.length;
+  const done=quests.filter(function(q){return itemDone(q);}).length+btasks.filter(function(t){return itemDone(t);}).length;
+  const previewText=(b.type==='project'&&ptasks.length)?ptasks[0].text:(b.focus||b.calTitle||'(untitled)');
+  return '<div class="pastrow'+(isBlockCleared(b)?' cleared':'')+'" onclick="toggleBlock(\''+b.id+'\')">'+
+    '<span class="gtime">'+b.start+'–'+(b.end||'')+'</span>'+
+    (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
+    '<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>'+
+    (total?'<span class="progdot">'+done+'/'+total+'</span>':'')+
+    '</div>';
+}
 /* one small absolutely-positioned box per block, sized and placed by its real clock time on the
-   fixed grid — no more elastic floor/ceiling. Clicking it opens the side detail panel instead of
-   growing the box inline, which is what keeps the grid actually proportional: an expanded block
-   used to blow past its real time-slot height, which a Google-Calendar-style grid can't allow. */
-function blockGridBoxHTML(b,openId){
+   fixed grid — no more elastic floor/ceiling. Clicking it opens the inline detail view instead of
+   growing the box itself, which is what keeps the grid actually proportional: an expanded block
+   used to blow past its real time-slot height, which a Google-Calendar-style grid can't allow.
+   gridOrigin defaults to DAY_START (a full day, e.g. viewing a past/future day) but the live
+   "now onward" grid for today passes its own origin so folded-past time doesn't eat vertical
+   space — see renderTimeline. */
+function blockGridBoxHTML(b,openId,gridOrigin){
+  gridOrigin=(gridOrigin===undefined)?DAY_START:gridOrigin;
   const cur=isCurrentBlock(b), past=!cur&&isPastBlock(b), empty=isEmptyBlock(b), cleared=isBlockCleared(b);
   const col=blockColor(b);
   const isOpen=openId===b.id;
-  const startMin=Math.max(DAY_START,toMin(b.start));
+  const startMin=Math.max(gridOrigin,toMin(b.start));
   const endMin=Math.min(DAY_END,toMin(b.end||fromMin(toMin(b.start)+60)));
-  const top=minToPx(startMin), heightPx=Math.max(16,minToPx(endMin)-top);
+  const top=minToPx(startMin,gridOrigin), heightPx=Math.max(16,minToPx(endMin,gridOrigin)-top);
   const quests=blockQuests(b), btasks=blockTasksFor(b), ptasks=projectBlockTasks(b);
   /* ptasks are pulled fresh from the bank each render and are never "done" by definition (a done
      one drops out of the pull), so they'd only ever pad the denominator without a matching
@@ -4277,20 +4326,19 @@ function blockGridBoxHTML(b,openId){
   const previewText=(b.type==='project'&&ptasks.length)?ptasks[0].text:(b.focus||b.calTitle||'');
   let styleAttr='top:'+top+'px;height:'+heightPx+'px';
   if(!empty) styleAttr+=';background:'+col.bg+';border-color:'+col.edge;
-  /* an empty auto-filler gets regenerated from scratch by buildGaps() every render (see the
-     comment on that function), so dragging its edge would just get silently undone on the next
-     render — resize handles only make sense on a block that's actually real. */
-  const canResize=!isUnassignedBlock(b);
   return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
     'ondragover="event.preventDefault();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onBlockDrop(event,\''+b.id+'\')" '+
     'onclick="toggleBlock(\''+b.id+'\')" title="'+(empty?'click to add a focus':'click for details')+'">'+
-    (canResize?'<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'top\')"></div>':'')+
+    '<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'top\')"></div>'+
     '<span class="gtime">'+b.start+'–'+(b.end||'')+'</span>'+
     (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon" title="'+BLOCK_TYPE_LABEL[b.type]+' block">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
     (empty&&!previewText?'<span class="gfocus emptyhint">+ add focus</span>':'<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>')+
     (totalCount?'<span class="progdot">'+doneCount+'/'+totalCount+'</span>':'')+
     (b.fromCal?'<span class="caltag">cal</span>':'')+
-    (canResize?'<div class="reshandle bottom" onmousedown="startBlockResize(event,\''+b.id+'\',\'bottom\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'bottom\')"></div>':'')+
+    /* the current block is the one you actually want to jump into right now — a direct lock-in
+       button here skips the "click to expand, then click lock in" detour */
+    (cur?'<button class="lockbtn" title="lock in" onclick="event.stopPropagation();lockIn(\''+b.id+'\')">🔒</button>':'')+
+    '<div class="reshandle bottom" onmousedown="startBlockResize(event,\''+b.id+'\',\'bottom\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'bottom\')"></div>'+
     '</div>';
 }
 /* the detail panel: subtasks, notes, the editable time fields, delete — everything that used to
@@ -4433,50 +4481,43 @@ function renderFocusSession(){
 function renderTimeline(){
   const d=day(vday());
   const openId=openBlockId();
-  let axis='';
-  for(let m=DAY_START;m<=DAY_END;m+=60) axis+='<span class="gh" style="top:'+minToPx(m)+'px">'+fromMin(m)+'</span>';
-  let body='';
-  for(let m=DAY_START;m<=DAY_END;m+=60) body+='<div class="gridline" style="top:'+minToPx(m)+'px"></div>';
-  groupTimelineSegments(d.blocks).forEach(function(seg){
-    const segStartMin=toMin(seg.run[0].start);
-    const segEndMin=toMin(seg.run[seg.run.length-1].end||fromMin(segStartMin+60));
-    const top=minToPx(Math.max(DAY_START,segStartMin)), height=Math.max(16,minToPx(Math.min(DAY_END,segEndMin))-top);
-    if(seg.type==='gap'){
-      const rk='gap-'+seg.run[0].id, expanded=!!manualRollup[rk];
-      if(!expanded){
-        body+='<div class="gaprollupabs" style="top:'+top+'px;height:'+height+'px" onclick="toggleRollup(\''+rk+'\')">'+
-          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">▸ '+seg.run[0].start+'–'+seg.run[seg.run.length-1].end+' · '+fmtDurShort(seg.totalMin)+' open</span>'+
-          '<button class="btn tiny ghost" onclick="event.stopPropagation();createBlockAt(\''+seg.run[0].start+'\',60)">+</button>'+
-          '</div>';
-      }else{
-        /* the re-collapse control lives in the axis column, not the body, so it never overlaps
-           the individual blocks it's sitting next to — those already fill this exact span */
-        axis+='<span class="gaxis-toggle" style="top:'+top+'px" onclick="toggleRollup(\''+rk+'\')" title="collapse">▾</span>';
-        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId); });
-      }
-    }else if(seg.type==='past'){
-      const rk='rollup-'+seg.run[0].id, expanded=!!manualRollup[rk];
-      if(!expanded){
-        body+='<div class="pastrollupabs" style="top:'+top+'px;height:'+height+'px" onclick="toggleRollup(\''+rk+'\')">⋯ '+
-          seg.run[0].start+'–'+seg.run[seg.run.length-1].end+' · '+seg.run.length+' block'+(seg.run.length===1?'':'s')+' earlier today</div>';
-      }else{
-        axis+='<span class="gaxis-toggle" style="top:'+top+'px" onclick="toggleRollup(\''+rk+'\')" title="collapse">▾</span>';
-        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId); });
-      }
-    }else{
-      body+=blockGridBoxHTML(seg.run[0],openId);
-    }
-  });
-  /* the now line: a real absolute line across the fixed grid, at the actual live-time offset —
-     unlike the elastic layout, the grid has a real fixed pixel height now, so this position is
-     reliable instead of resolving against an auto-height container. */
-  if(isViewingToday()){
-    const nm=nowMinutes()%1440;
-    if(nm>=DAY_START&&nm<=DAY_END) body+='<div class="gridnowline" style="top:'+minToPx(nm)+'px" data-lbl="'+hhmm(new Date())+'"></div>';
+  const viewingToday=isViewingToday();
+  /* today only: everything already past folds into one line, and the live grid's own coordinate
+     origin shifts to "now" (snapped to a quarter hour) so that folded time costs zero vertical
+     space instead of pushing the current block down the page. Any other day (past or future)
+     renders as one plain full-day grid — folding only matters when there's a "now" inside it. */
+  let liveOrigin=DAY_START, pastRun=null;
+  if(viewingToday){
+    const segs=groupTimelineSegments(d.blocks);
+    pastRun=(segs[0]&&segs[0].type==='past')?segs[0].run:null;
+    if(pastRun) liveOrigin=Math.min(DAY_END,snap15(nowMinutes()%1440));
   }
-  document.getElementById('timeline').innerHTML=
-    '<div class="gridwrap"><div class="gridaxis" style="height:'+GRID_TOTAL_PX+'px">'+axis+'</div>'+
-    '<div class="gridbody" style="height:'+GRID_TOTAL_PX+'px">'+body+'</div></div>';
+  const liveBlocks=viewingToday?d.blocks.filter(function(b){return !isPastBlock(b);}):d.blocks;
+  let h='';
+  if(pastRun&&pastRun.length){
+    const rk='pastday-'+vday(), expanded=!!manualRollup[rk];
+    h+='<div class="pastfold" onclick="toggleRollup(\''+rk+'\')">'+(expanded?'▾ ':'▸ ')+
+       pastRun[0].start+'–'+fromMin(liveOrigin)+' · '+pastRun.length+' block'+(pastRun.length===1?'':'s')+' earlier today</div>';
+    if(expanded) h+='<div class="pastfoldbody">'+pastRun.map(pastBlockRowHTML).join('')+'</div>';
+  }
+  const totalPx=Math.round((DAY_END-liveOrigin)*GRID_PX_PER_MIN);
+  let axis='', body='';
+  const axisStartHour=Math.ceil(liveOrigin/60)*60;
+  for(let m=axisStartHour;m<=DAY_END;m+=60){ axis+='<span class="gh" style="top:'+minToPx(m,liveOrigin)+'px">'+fromMin(m)+'</span>'; body+='<div class="gridline" style="top:'+minToPx(m,liveOrigin)+'px"></div>'; }
+  liveBlocks.forEach(function(b){ body+=blockGridBoxHTML(b,openId,liveOrigin); });
+  /* the now line: a real absolute line across the fixed grid, at the actual live-time offset —
+     the grid has a real fixed pixel height, so this position is reliable instead of resolving
+     against an auto-height container. */
+  if(viewingToday){
+    const nm=nowMinutes()%1440;
+    if(nm>=liveOrigin&&nm<=DAY_END) body+='<div class="gridnowline" style="top:'+minToPx(nm,liveOrigin)+'px" data-lbl="'+hhmm(new Date())+'"></div>';
+  }
+  if(pendingBlockStart!==null&&pendingBlockStart>=liveOrigin&&pendingBlockStart<=DAY_END){
+    body+='<div class="pendingline" style="top:'+minToPx(pendingBlockStart,liveOrigin)+'px" data-lbl="'+fromMin(pendingBlockStart)+' — double-click the end"></div>';
+  }
+  h+='<div class="gridwrap"><div class="gridaxis" style="height:'+totalPx+'px">'+axis+'</div>'+
+    '<div class="gridbody" style="height:'+totalPx+'px" '+gridCanvasHandlers(liveOrigin)+'>'+body+'</div></div>';
+  document.getElementById('timeline').innerHTML=h;
   renderBlockDetailPanel();
 }
 /* ---------- drag-to-resize: mouse on desktop, touch too, alongside the time-input fields ----------
@@ -4852,11 +4893,13 @@ function render(){
        quest dock, which is only ever for genuinely repeating non-habit quests */
     const unassignedHabits=ritualRoster(null).filter(function(i){return i.type==='core'||i.type==='med'||i.type==='custom';});
     if(unassignedHabits.length) hsColsHtml+=hsCol(null,'unassigned');
-    hsColsHtml+='<div class="hscol hscoladd">'+
-      '<input id="newRitualName" placeholder="new ritual block…" maxlength="40">'+
-      '<div class="ritualaddtimes"><input id="newRitualStart" type="time" value="12:00"><input id="newRitualEnd" type="time" value="13:00"></div>'+
-      '<button class="btn tiny soft" onclick="submitAddRitualDef()">+ add ritual</button></div>';
-    hsEl.innerHTML='<div class="hscols">'+hsColsHtml+'</div>';
+    /* just morning + evening, always — no ritual-block creation UI. Adding a new HABIT (an item
+       within one of those two) is the one thing this card still needs a quick path for. */
+    let habitAddHtml='<div class="habitaddquick">'+
+      '<input id="newHabitName" placeholder="new habit…" maxlength="60" onkeydown="if(event.key===\'Enter\'){event.preventDefault();submitAddHabit()}">'+
+      '<select id="newHabitRitual">'+(S.ritualDefs||[]).map(function(rd){return '<option value="'+rd.id+'">'+rd.name+'</option>';}).join('')+'</select>'+
+      '<button class="btn tiny soft" onclick="submitAddHabit()">+ habit</button></div>';
+    hsEl.innerHTML='<div class="hscols">'+hsColsHtml+'</div>'+habitAddHtml;
   }
   let gh='';
   S.books.forEach(function(b){
@@ -5280,6 +5323,8 @@ function onTouchDragEnd(){
   });
   document.addEventListener('keydown',function(e){
     if(e.key==='Escape'&&focusBlockId){ exitFocus(); return; }
+    if(e.key==='Escape'&&pendingBlockStart!==null){ cancelPendingBlock(); return; }
+    if(e.key==='Escape'&&openBlockId()){ closeBlockPanel(); return; }
     const mod=e.ctrlKey||e.metaKey;
     if(!mod) return;
     const t=e.target;
