@@ -51,8 +51,11 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .bar.sun .fill{background:var(--sun-deep)}
 .bar.lav .fill{background:var(--lav-deep)}
 .bar.aqua .fill{background:var(--aqua-deep)}
-.hero{margin-bottom:20px;display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
-.hero .left{flex:1;min-width:260px}
+.hero{margin-bottom:20px;display:flex;align-items:stretch;gap:16px;flex-wrap:wrap}
+/* gradient stops are drawn from each theme's own light/dark family (see Phase 0's gradA1/gradA2
+   picks), so the existing --ink/--ink-2 text colors — already tuned for that theme's typical
+   light-or-dark background — read correctly here too without a separate light/dark text override */
+.hero .left{flex:1;min-width:260px;background:var(--grad-a);border-radius:var(--r-card);padding:18px 22px}
 .greetrow{display:flex;flex-direction:column}
 .hero .greet{font-family:var(--serif);font-size:var(--fs-2xl);font-weight:600;letter-spacing:-.01em}
 .hero .date{font-size:var(--fs-xs);color:var(--ink-2);margin-top:3px;letter-spacing:.04em}
