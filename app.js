@@ -22,12 +22,18 @@ const DEFAULT_CATEGORIES=['home','research','admin','self-care','hobbies','schoo
    would just silently fall back to the browser default with no feedback */
 const DEFAULT_THEME={mode:'light', bgpage:'#fbe6f4', glass:'#FFFFFF', glassStrong:'#F6F5F1',
   ink:'#1C1B19', ink2:'#6A6862', ink3:'#A6A39B', stroke:'rgba(28,27,25,.14)', rule:'rgba(28,27,25,.08)',
-  pink:'#F7D6DD', pinkDeep:'#E7A6B7', mint:'#DCE9CB', mintDeep:'#93AD64', fontKey:'inter'};
+  pink:'#F7D6DD', pinkDeep:'#E7A6B7', mint:'#DCE9CB', mintDeep:'#93AD64', fontKey:'inter',
+  hueBlue:'#AEC9EF', hueBlueDeep:'#4C7DC0', hueViolet:'#CBB8EA', hueVioletDeep:'#8B67C7',
+  hueYellow:'#F3DE86', hueYellowDeep:'#CDA328', gradA1:'#B7E4C7', gradA2:'#8FC6E8',
+  gradB1:'#FFD3A8', gradB2:'#FF9FC0'};
 /* dark mode is its own curated preset (not a computed inverse of the light one) so contrast and
    accent saturation can be tuned by hand rather than relying on a naive color-flip */
 const DEFAULT_DARK_THEME={mode:'dark', bgpage:'#17181B', glass:'#212327', glassStrong:'#2A2C31',
   ink:'#EDEDEC', ink2:'#A8A9AD', ink3:'#6E7075', stroke:'rgba(255,255,255,.14)', rule:'rgba(255,255,255,.08)',
-  pink:'#4F3640', pinkDeep:'#8A5468', mint:'#333F29', mintDeep:'#7C9A52', fontKey:'inter'};
+  pink:'#4F3640', pinkDeep:'#8A5468', mint:'#333F29', mintDeep:'#7C9A52', fontKey:'inter',
+  hueBlue:'#2E3A4A', hueBlueDeep:'#6FA0D8', hueViolet:'#3A2E4A', hueVioletDeep:'#A47FD9',
+  hueYellow:'#4A4326', hueYellowDeep:'#D9BB4A', gradA1:'#2A3B33', gradA2:'#274056',
+  gradB1:'#3D2A30', gradB2:'#35303F'};
 const FONT_STACKS={
   inter:"'Inter','Helvetica Neue',Helvetica,'Hiragino Kaku Gothic ProN','Yu Gothic',Arial,sans-serif",
   serif:"Georgia,'Times New Roman',serif",
@@ -41,19 +47,34 @@ const FONT_STACKS={
 const PRESET_THEMES=[
   {id:'pilates', name:'pink pilates princess', mode:'light', bgpage:'#FFE9F2', glass:'#FFFFFF', glassStrong:'#FFF4F8',
     ink:'#3A222C', ink2:'#95677A', ink3:'#D3A9BC', stroke:'rgba(58,34,44,.14)', rule:'rgba(58,34,44,.08)',
-    pink:'#FFB6D5', pinkDeep:'#F25CA0', mint:'#F5E1A4', mintDeep:'#D9A927', fontKey:'rounded'},
+    pink:'#FFB6D5', pinkDeep:'#F25CA0', mint:'#F5E1A4', mintDeep:'#D9A927', fontKey:'rounded',
+    hueBlue:'#BFE0F2', hueBlueDeep:'#4FA9D6', hueViolet:'#E3C7F2', hueVioletDeep:'#B072D9',
+    hueYellow:'#FFEAA8', hueYellowDeep:'#E0B400', gradA1:'#FFD1E8', gradA2:'#FFF0B3',
+    gradB1:'#D6B8F5', gradB2:'#FFC2E0'},
   {id:'cottagecore', name:'cottagecore', mode:'light', bgpage:'#F4EEDC', glass:'#FFFDF6', glassStrong:'#FBF4E4',
     ink:'#3B3226', ink2:'#7C6F58', ink3:'#B3A488', stroke:'rgba(59,50,38,.16)', rule:'rgba(59,50,38,.09)',
-    pink:'#E7B199', pinkDeep:'#B96B4A', mint:'#C3CFA6', mintDeep:'#748A57', fontKey:'serif'},
+    pink:'#E7B199', pinkDeep:'#B96B4A', mint:'#C3CFA6', mintDeep:'#748A57', fontKey:'serif',
+    hueBlue:'#AFC9D9', hueBlueDeep:'#5A8CA3', hueViolet:'#CDBFE0', hueVioletDeep:'#8F72B8',
+    hueYellow:'#E8D18A', hueYellowDeep:'#C4992E', gradA1:'#E7B199', gradA2:'#C3CFA6',
+    gradB1:'#F4EEDC', gradB2:'#E7B199'},
   {id:'ocean', name:'ocean breeze', mode:'light', bgpage:'#E6F3F5', glass:'#FFFFFF', glassStrong:'#F1FAFB',
     ink:'#163238', ink2:'#54767F', ink3:'#9BB9BF', stroke:'rgba(22,50,56,.14)', rule:'rgba(22,50,56,.08)',
-    pink:'#FFB79B', pinkDeep:'#E8734F', mint:'#8FD1CC', mintDeep:'#39948F', fontKey:'system'},
+    pink:'#FFB79B', pinkDeep:'#E8734F', mint:'#8FD1CC', mintDeep:'#39948F', fontKey:'system',
+    hueBlue:'#9FC6E8', hueBlueDeep:'#3E7EB0', hueViolet:'#C5B8E0', hueVioletDeep:'#8267C2',
+    hueYellow:'#F5DC8A', hueYellowDeep:'#D4A72A', gradA1:'#8FD1CC', gradA2:'#9FC6E8',
+    gradB1:'#FFB79B', gradB2:'#8FD1CC'},
   {id:'academia', name:'dark academia', mode:'dark', bgpage:'#1C1512', glass:'#2A211C', glassStrong:'#332822',
     ink:'#EDE3D3', ink2:'#B8A78F', ink3:'#7C6E5C', stroke:'rgba(255,255,255,.14)', rule:'rgba(255,255,255,.08)',
-    pink:'#8C4A52', pinkDeep:'#D98A97', mint:'#4B4630', mintDeep:'#C9A227', fontKey:'serif'},
+    pink:'#8C4A52', pinkDeep:'#D98A97', mint:'#4B4630', mintDeep:'#C9A227', fontKey:'serif',
+    hueBlue:'#2B3A42', hueBlueDeep:'#5E92A8', hueViolet:'#362C42', hueVioletDeep:'#9270B0',
+    hueYellow:'#4B4630', hueYellowDeep:'#C9A227', gradA1:'#332822', gradA2:'#2A211C',
+    gradB1:'#3A2A30', gradB2:'#2A2822'},
   {id:'sunset', name:'sunset retro', mode:'light', bgpage:'#FFE7D3', glass:'#FFFFFF', glassStrong:'#FFF2E6',
     ink:'#3A1F2B', ink2:'#8A5C6A', ink3:'#D3ABB6', stroke:'rgba(58,31,43,.14)', rule:'rgba(58,31,43,.08)',
-    pink:'#FF8FA8', pinkDeep:'#E8437A', mint:'#B49AE0', mintDeep:'#7451C4', fontKey:'rounded'}
+    pink:'#FF8FA8', pinkDeep:'#E8437A', mint:'#B49AE0', mintDeep:'#7451C4', fontKey:'rounded',
+    hueBlue:'#8FC6E8', hueBlueDeep:'#3E85C2', hueViolet:'#D9B8F0', hueVioletDeep:'#9B5FE0',
+    hueYellow:'#FFD98A', hueYellowDeep:'#E8A020', gradA1:'#FF8FA8', gradA2:'#FFD98A',
+    gradB1:'#B49AE0', gradB2:'#FF8FA8'}
 ];
 /* default card order per column, across BOTH the today view (cols 0-2: todayColA/B/C) and the
    more view (cols 3-5: moreColA/B/C) — ids match each card's actual DOM id. Water lives in the
@@ -329,6 +350,17 @@ function applyTheme(){
   ['--pink-deep','--lav-deep','--peach-deep'].forEach(function(v){ r.setProperty(v,t.pinkDeep); });
   ['--mint','--aqua','--sun','--sky','--leaf','--water'].forEach(function(v){ r.setProperty(v,t.mint); });
   ['--mint-deep','--aqua-deep','--sun-deep','--sky-deep','--leaf-deep','--water-deep'].forEach(function(v){ r.setProperty(v,t.mintDeep); });
+  /* 3 more saturated hues rounding the accent set out to 5 (plus pink/mint above) — || fallbacks
+     so a theme object saved before these keys existed (an old localStorage state, an imported
+     pre-refactor backup) degrades to a sane default instead of writing "undefined" into a CSS var */
+  r.setProperty('--blue',t.hueBlue||'#8FB8E0');
+  r.setProperty('--blue-deep',t.hueBlueDeep||'#4A7FB5');
+  r.setProperty('--violet',t.hueViolet||'#C9B6E8');
+  r.setProperty('--violet-deep',t.hueVioletDeep||'#8B6BC4');
+  r.setProperty('--yellow',t.hueYellow||'#F0D878');
+  r.setProperty('--yellow-deep',t.hueYellowDeep||'#C4A030');
+  r.setProperty('--grad-a','linear-gradient(135deg,'+(t.gradA1||t.pink)+','+(t.gradA2||t.mint)+')');
+  r.setProperty('--grad-b','linear-gradient(135deg,'+(t.gradB1||t.mint)+','+(t.gradB2||t.pink)+')');
 }
 function setThemeColor(key,val){ S.theme[key]=val; save(); applyTheme(); }
 function setThemeFont(key){ S.theme.fontKey=key; save(); applyTheme(); }
@@ -373,8 +405,12 @@ function delSavedTheme(id,ev){ if(ev)ev.stopPropagation(); if(!arm('th:'+id)) re
 }
 function paintThemePanel(){
   const t=S.theme;
-  ['bgpage','glass','glassStrong','ink','ink2','ink3','pink','pinkDeep','mint','mintDeep'].forEach(function(k){
-    const el=document.getElementById('th-'+k); if(el) el.value=t[k];
+  const FALLBACK_HUES={hueBlue:'#8FB8E0',hueBlueDeep:'#4A7FB5',hueViolet:'#C9B6E8',hueVioletDeep:'#8B6BC4',
+    hueYellow:'#F0D878',hueYellowDeep:'#C4A030',gradA1:t.pink,gradA2:t.mint,gradB1:t.mint,gradB2:t.pink};
+  ['bgpage','glass','glassStrong','ink','ink2','ink3','pink','pinkDeep','mint','mintDeep',
+   'hueBlue','hueBlueDeep','hueViolet','hueVioletDeep','hueYellow','hueYellowDeep',
+   'gradA1','gradA2','gradB1','gradB2'].forEach(function(k){
+    const el=document.getElementById('th-'+k); if(el) el.value=t[k]||FALLBACK_HUES[k]||'#000000';
   });
   const fontEl=document.getElementById('th-font'); if(fontEl) fontEl.value=t.fontKey;
   const savedEl=document.getElementById('savedThemesRow');
