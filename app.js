@@ -20,20 +20,24 @@ const DEFAULT_CATEGORIES=['home','research','admin','self-care','hobbies','schoo
 /* appearance: background/card/text + the app's two accent families (strawberry, matcha), plus
    a small curated set of font stacks — free-text font input isn't offered since a bad value
    would just silently fall back to the browser default with no feedback */
-const DEFAULT_THEME={mode:'light', bgpage:'#fbe6f4', glass:'#FFFFFF', glassStrong:'#F6F5F1',
-  ink:'#1C1B19', ink2:'#6A6862', ink3:'#A6A39B', stroke:'rgba(28,27,25,.14)', rule:'rgba(28,27,25,.08)',
-  pink:'#F7D6DD', pinkDeep:'#E7A6B7', mint:'#DCE9CB', mintDeep:'#93AD64', fontKey:'inter',
-  hueBlue:'#AEC9EF', hueBlueDeep:'#4C7DC0', hueViolet:'#CBB8EA', hueVioletDeep:'#8B67C7',
-  hueYellow:'#F3DE86', hueYellowDeep:'#CDA328', gradA1:'#B7E4C7', gradA2:'#8FC6E8',
-  gradB1:'#FFD3A8', gradB2:'#FF9FC0'};
+/* full repaint — the old strawberry-cream/matcha default replaced with a warm-cream "citrus
+   neutral" base so the app's own baseline look stops reading as "pink app" before anyone even
+   opens the theme picker */
+const DEFAULT_THEME={mode:'light', bgpage:'#F7F1E8', glass:'#FFFFFF', glassStrong:'#FBF7F0',
+  ink:'#231F1A', ink2:'#6E6459', ink3:'#A79C8C', stroke:'rgba(35,31,26,.14)', rule:'rgba(35,31,26,.08)',
+  pink:'#FFB4A8', pinkDeep:'#E85D4A', mint:'#A8E0C8', mintDeep:'#2E9E72', fontKey:'inter',
+  hueBlue:'#A8CDEE', hueBlueDeep:'#4A85C4', hueViolet:'#D3BFF0', hueVioletDeep:'#8B5FD1',
+  hueYellow:'#FFE29A', hueYellowDeep:'#E0A72A', gradA1:'#FFB4A8', gradA2:'#A8CDEE',
+  gradB1:'#A8E0C8', gradB2:'#FFE29A'};
 /* dark mode is its own curated preset (not a computed inverse of the light one) so contrast and
-   accent saturation can be tuned by hand rather than relying on a naive color-flip */
-const DEFAULT_DARK_THEME={mode:'dark', bgpage:'#17181B', glass:'#212327', glassStrong:'#2A2C31',
-  ink:'#EDEDEC', ink2:'#A8A9AD', ink3:'#6E7075', stroke:'rgba(255,255,255,.14)', rule:'rgba(255,255,255,.08)',
-  pink:'#4F3640', pinkDeep:'#8A5468', mint:'#333F29', mintDeep:'#7C9A52', fontKey:'inter',
-  hueBlue:'#2E3A4A', hueBlueDeep:'#6FA0D8', hueViolet:'#3A2E4A', hueVioletDeep:'#A47FD9',
-  hueYellow:'#4A4326', hueYellowDeep:'#D9BB4A', gradA1:'#2A3B33', gradA2:'#274056',
-  gradB1:'#3D2A30', gradB2:'#35303F'};
+   accent saturation can be tuned by hand rather than relying on a naive color-flip — a cooler
+   "slate" dark instead of the old pink-tinted dark */
+const DEFAULT_DARK_THEME={mode:'dark', bgpage:'#14151A', glass:'#1E2028', glassStrong:'#282A34',
+  ink:'#F1F1F4', ink2:'#9A9CA8', ink3:'#5A5C68', stroke:'rgba(255,255,255,.12)', rule:'rgba(255,255,255,.06)',
+  pink:'#4A2E38', pinkDeep:'#E8637E', mint:'#1F3D33', mintDeep:'#3ECF9A', fontKey:'inter',
+  hueBlue:'#25344A', hueBlueDeep:'#5B9BE8', hueViolet:'#332A47', hueVioletDeep:'#A47FE8',
+  hueYellow:'#3D3520', hueYellowDeep:'#E8C24A', gradA1:'#1F2733', gradA2:'#241E2E',
+  gradB1:'#241E28', gradB2:'#1E2620'};
 /* real webfonts (loaded in index.html's <head>) instead of the old OS-font-fallback stacks —
    most people don't have Inter/Trebuchet actually installed, so those used to silently fall back
    to whatever generic sans/serif the OS shipped; each of these five now has real character */
