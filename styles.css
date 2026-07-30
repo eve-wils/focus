@@ -16,7 +16,6 @@
   --glass:#FFFFFF; --glass-strong:#F6F5F1;
   --stroke:rgba(28,27,25,.14);
   --rule:rgba(28,27,25,.08);
-  --shadow:none;
   --serif:'Inter','Helvetica Neue',Helvetica,'Hiragino Kaku Gothic ProN','Yu Gothic',Arial,sans-serif;
   /* type scale: replaces ~23 ad-hoc font-size literals with 9 named steps */
   --fs-3xs:10px; --fs-2xs:11px; --fs-xs:12px; --fs-sm:13px; --fs-base:14px;
@@ -24,8 +23,14 @@
   /* spacing scale: 4px grid */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-7:32px;
   /* radius scale: pill = toggle/selector chips, md = action buttons, sm = small icon controls, card = panels */
-  --r-sm:8px; --r-md:10px; --r-card:14px; --r-pill:99px;
-  /* elevation: flat "paper card" stays shadowless by default; these 2 tiers cover overlay/floating surfaces only */
+  --r-sm:8px; --r-md:10px; --r-card:20px; --r-pill:99px;
+  /* elevation ladder: card < card-hover < float (overlays) < modal (full-screen). --shadow-card/
+     -hover are overridden per theme mode in applyTheme() (app.js) since dark presets need a
+     stronger/higher-alpha shadow to stay visible against a near-black page — these literals here
+     are just the light-mode starting values so the app isn't shadowless before JS runs. */
+  --shadow-card:0 1px 2px rgba(20,16,10,.05), 0 8px 24px -4px rgba(20,16,10,.10);
+  --shadow-card-hover:0 2px 4px rgba(20,16,10,.06), 0 16px 40px -6px rgba(20,16,10,.16);
+  --shadow-block:0 2px 6px rgba(20,16,10,.14), 0 1px 2px rgba(20,16,10,.07);
   --shadow-modal:0 20px 60px rgba(0,0,0,.25);
   --shadow-float:0 12px 40px rgba(0,0,0,.18);
 }
@@ -97,8 +102,9 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
    this skips straight to 1 column, same as the phone layout, rather than the awkward 2-up state */
 @media (max-width:1180px){.grid{grid-template-columns:1fr}.grid.grid3plan{grid-template-columns:1fr}}
 .col{display:flex;flex-direction:column;gap:18px;min-width:0}
-/* flat paper card: hairline rule, no blur, no shadow */
-.card{background:var(--glass);border:1px solid var(--stroke);border-radius:var(--r-card);padding:18px}
+.card{background:var(--glass);border:1px solid var(--stroke);border-radius:var(--r-card);padding:22px;
+  box-shadow:var(--shadow-card);transition:box-shadow .2s ease,transform .2s ease}
+.card:hover{box-shadow:var(--shadow-card-hover);transform:translateY(-2px)}
 .card > header{display:flex;align-items:center;gap:10px;margin-bottom:14px;min-height:15px;
   padding-bottom:9px;border-bottom:1px solid var(--rule);cursor:grab;user-select:none}
 .card > header:active{cursor:grabbing}
@@ -109,6 +115,7 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .ritualpanel .phead{cursor:grab;user-select:none}
 .ritualpanel .phead:active{cursor:grabbing}
 .card.dragging,.ritualpanel.dragging{opacity:.4}
+.card.dragging:hover{box-shadow:var(--shadow-card);transform:none}
 .dropzone{height:10px;margin:1px 0;border-radius:5px;transition:height .12s ease,background .12s ease;}
 .dropzone.active{height:36px;background:rgba(147,173,100,.16);border:1.5px dashed var(--mint-deep)}
 .settingspanel{position:fixed;inset:0;background:rgba(28,27,25,.35);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px}
@@ -742,7 +749,7 @@ body.touchdragging .dropzone{height:34px;background:rgba(147,173,100,.12)}
   .offtodaybar{margin-bottom:14px;font-size:12.5px;padding:12px 14px}
   .grid,.grid.grid3plan{grid-template-columns:1fr;gap:14px}
   .col{gap:14px}
-  .card{padding:15px 14px;border-radius:15px}
+  .card{padding:16px 15px;border-radius:17px}
   .card > header{margin-bottom:12px}
   .ritualpanel .pbody{padding:0 12px 12px}
   .addrow,.addchip{flex-wrap:wrap}
@@ -843,7 +850,7 @@ body.touchdragging .dropzone{height:34px;background:rgba(147,173,100,.12)}
   border:1px solid var(--stroke);box-shadow:var(--shadow-float);animation:toastIn .4s cubic-bezier(.2,1.2,.4,1)}
 @keyframes toastIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
 .glowpulse{animation:glowP .9s ease}
-@keyframes glowP{0%{box-shadow:var(--shadow)}40%{box-shadow:0 0 0 3px rgba(127,164,146,.3),0 8px 36px rgba(127,164,146,.35)}100%{box-shadow:var(--shadow)}}
+@keyframes glowP{0%{box-shadow:var(--shadow-card)}40%{box-shadow:0 0 0 3px rgba(127,164,146,.3),0 8px 36px rgba(127,164,146,.35)}100%{box-shadow:var(--shadow-card)}}
 .burstdot{position:fixed;width:6px;height:6px;border-radius:50%;pointer-events:none;z-index:85;animation:burstFly .72s ease-out forwards}
 @keyframes burstFly{0%{opacity:1;transform:translate(-50%,-50%) scale(.6)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1.15)}}
 .footnote{margin-top:22px;text-align:center;font-size:11px;color:var(--ink-3)}

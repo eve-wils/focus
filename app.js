@@ -384,6 +384,18 @@ function applyTheme(){
   r.setProperty('--yellow-deep',t.hueYellowDeep||'#C4A030');
   r.setProperty('--grad-a','linear-gradient(135deg,'+(t.gradA1||t.pink)+','+(t.gradA2||t.mint)+')');
   r.setProperty('--grad-b','linear-gradient(135deg,'+(t.gradB1||t.mint)+','+(t.gradB2||t.pink)+')');
+  /* card/block elevation needs to be visibly stronger on a dark theme to read against a
+     near-black page — same shadow tokens, just a mode-branched intensity, so this needs no new
+     field on any of the 8 theme objects, only the mode they already carry */
+  if(t.mode==='dark'){
+    r.setProperty('--shadow-card','0 1px 2px rgba(0,0,0,.35), 0 10px 28px -4px rgba(0,0,0,.55)');
+    r.setProperty('--shadow-card-hover','0 2px 4px rgba(0,0,0,.4), 0 18px 44px -6px rgba(0,0,0,.65)');
+    r.setProperty('--shadow-block','0 2px 6px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.3)');
+  } else {
+    r.setProperty('--shadow-card','0 1px 2px rgba(20,16,10,.05), 0 8px 24px -4px rgba(20,16,10,.10)');
+    r.setProperty('--shadow-card-hover','0 2px 4px rgba(20,16,10,.06), 0 16px 40px -6px rgba(20,16,10,.16)');
+    r.setProperty('--shadow-block','0 2px 6px rgba(20,16,10,.14), 0 1px 2px rgba(20,16,10,.07)');
+  }
 }
 function setThemeColor(key,val){ S.theme[key]=val; save(); applyTheme(); }
 function setThemeFont(key){ S.theme.fontKey=key; save(); applyTheme(); }
