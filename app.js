@@ -3650,7 +3650,7 @@ function renderTaskChip(t){
     'ondragover="event.preventDefault();event.stopPropagation();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onTaskRowDrop(event,\''+t.id+'\')">'+
     '<div class="tbchip-title">'+
     '<div class="ring" onclick="toggleUnit(\''+t.id+'\')" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:#fff':'')+'">\u2713</div>'+
-    (prioColor?'<span class="prio" style="background:'+prioColor+'" title="'+t.priority+' priority"></span>':'')+
+    (prioColor?'<span class="prio" style="background:'+prioColor+'" title="'+t.priority+' priority">'+t.priority+'</span>':'')+
     '<span class="nm" contenteditable="true" onclick="event.stopPropagation()" onblur="setTaskText(\''+t.id+'\',this.textContent)">'+String(t.text).replace(/</g,'&lt;')+'</span>'+
     '</div>'+
     unitProgressHTML(t)+
@@ -3665,8 +3665,9 @@ function renderTaskBank(){
   const catChipsEl=document.getElementById('catChips');
   if(catChipsEl){
     catChipsEl.innerHTML=S.categories.map(function(c){
-      const dArm=armed==='cat:'+c;
-      return '<span class="catchip">'+c+'<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.5" onclick="delCategory(\''+c+'\',event)">'+(dArm?'sure?':'✕')+'</button></span>';
+      const dArm=armed==='cat:'+c, col=categoryColor(c);
+      return '<span class="catchip" style="border-color:'+col.edge+'"><span class="tagdot" style="background:'+col.edge+'"></span>'+c+
+        '<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.5" onclick="delCategory(\''+c+'\',event)">'+(dArm?'sure?':'✕')+'</button></span>';
     }).join('');
   }
   let totalUnassigned=0;
@@ -3683,7 +3684,8 @@ function renderTaskBank(){
     let h='<div class="tbenv-head" onclick="toggleEnvelope(\''+env+'\')"><span class="lbl">'+env+'</span><span class="stripcount">'+items.length+'</span></div>';
     h+='<div class="tbenv-body">';
     Object.keys(tags).sort().forEach(function(tg){
-      h+='<div class="tbtag"><div class="tbtaghead">'+tg+'</div>';
+      const tgCol=categoryColor(tg);
+      h+='<div class="tbtag"><div class="tbtaghead"><span class="tagdot" style="background:'+tgCol.edge+'"></span>'+tg+'</div>';
       tags[tg].sort(byOrder).forEach(function(t){ h+=renderTaskChip(t); });
       h+='</div>';
     });
