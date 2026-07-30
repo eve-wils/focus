@@ -191,11 +191,14 @@
           <div class="chart" id="readChart"></div>
           <div class="clbls" id="readLbls"></div>
         </div>
-        <div class="hbar" style="margin-top:12px;margin-bottom:6px">
-          <div class="bar aqua"><div class="fill" id="readGoalFill" style="width:0%"></div></div>
-          <span class="n" id="readGoalN"></span>
+        <div class="statring" style="margin:12px auto 6px">
+          <svg viewBox="0 0 100 100" class="pring">
+            <circle class="pring-track" cx="50" cy="50" r="40"></circle>
+            <circle class="pring-fill" id="readGoalRing" cx="50" cy="50" r="40"></circle>
+          </svg>
+          <div class="pringtext" id="readGoalN"></div>
         </div>
-        <div class="sub" style="font-size:11px;color:var(--ink-3)">weekly reading goal
+        <div class="sub" style="font-size:11px;color:var(--ink-3);text-align:center">weekly reading goal
           <button class="btn tiny ghost" style="font-size:11px" onclick="toggleEdit('readGoal')" id="readGoalBtn">150 pages</button>
         </div>
         <div id="readGoalEditBox"></div>

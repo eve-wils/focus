@@ -2860,7 +2860,18 @@ function stopwatchToggle(){
   medi.iv=setInterval(mediPaint,1000);
   mediPaint();
 }
-const MRING_CIRC=2*Math.PI*44; /* r=44 in the svg viewBox */
+/* generic percentage-ring painter — the reusable half of what the meditation ring below already
+   does by hand: any future ring (a goal, a budget bucket, a macro balance) just needs its own
+   static <svg> skeleton in markup (same shape as .mring/.pring) and a call to paintRing(id,pct,r)
+   to animate the arc. Not a markup generator — this codebase's convention throughout is a static
+   HTML skeleton patched by targeted DOM writes each render, not innerHTML regeneration, so a new
+   ring's skeleton lives in index.html same as .mring's does. */
+function paintRing(id,pct,r){
+  const ring=document.getElementById(id); if(!ring) return;
+  const circ=2*Math.PI*(r||40);
+  ring.setAttribute('stroke-dasharray',circ);
+  ring.setAttribute('stroke-dashoffset',circ*(1-Math.max(0,Math.min(1,pct))));
+}
 function mediBestSec(){ return S.mediBestSec||0; }
 /* countdown: ring drains as the timer runs down.
    stopwatch: ring fills toward your personal best. Once you pass it the ring flips to pink
@@ -2881,8 +2892,7 @@ function mediPaint(){
   else { const m=Math.floor(medi.left/60),s=medi.left%60; t.textContent=m+':'+String(s).padStart(2,'0'); }
   const ring=document.getElementById('mediRing');
   if(ring){
-    ring.setAttribute('stroke-dasharray',MRING_CIRC);
-    ring.setAttribute('stroke-dashoffset',MRING_CIRC*(1-Math.max(0,Math.min(1,st.pct))));
+    paintRing('mediRing',st.pct,44);
     ring.classList.toggle('past',!!st.past);
   }
   const cue=document.getElementById('breathCue');
@@ -3902,7 +3912,7 @@ function render(){
   document.getElementById('bookList').innerHTML=gh;
   let wk=0; for(let n=0;n<7;n++){ const dd=S.days[shiftKey(vday(),-n)]; if(dd)wk+=dd.pagesLogged||0; }
   document.getElementById('pagesWk').textContent=wk+' pages this week';
-  document.getElementById('readGoalFill').style.width=Math.min(100,Math.round(wk/S.readGoal*100))+'%';
+  paintRing('readGoalRing',S.readGoal?wk/S.readGoal:0,40);
   document.getElementById('readGoalN').textContent=wk+'/'+S.readGoal;
   document.getElementById('readGoalBtn').textContent=S.readGoal+' pages';
   document.getElementById('readGoalEditBox').innerHTML= editing==='readGoal'?

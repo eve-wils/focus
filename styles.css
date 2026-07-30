@@ -519,6 +519,14 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .mring-fill{stroke:var(--mint-deep);transition:stroke-dashoffset .95s linear,stroke .4s ease}
 .mring-fill.past{stroke:var(--pink-deep)}
 .ringwrap .otime{position:absolute;font-size:17px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+/* generic percentage ring — same shape as .mring above (track + stroked arc, painted by the
+   shared paintRing() helper), sized down for a stat readout rather than a hero timer */
+.statring{position:relative;width:96px;height:96px;flex:0 0 auto;display:grid;place-items:center}
+.pring{width:96px;height:96px;transform:rotate(-90deg)}
+.pring circle{fill:none;stroke-width:7;stroke-linecap:round}
+.pring-track{stroke:rgba(35,33,30,.09)}
+.pring-fill{stroke:var(--blue-deep);transition:stroke-dashoffset .6s ease}
+.pringtext{position:absolute;font-size:14px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 .medibtns{flex:1;display:flex;flex-direction:column;gap:10px}
 .presetrow{display:flex;gap:8px}
 .preset{flex:1;border:1px solid var(--stroke);border-radius:var(--r-pill);padding:6px 0;font-weight:600;font-size:11.5px;background:transparent;color:var(--ink-2);transition:.2s}
