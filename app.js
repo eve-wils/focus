@@ -686,6 +686,37 @@ function migrateBlockTasksToUnified(){
   S.blockTasksMigratedAt=Date.now();
   save();
 }
+/* Folds the old per-day plan goals (day.plan.items, shape {t,done}) into S.tasks as ordinary
+   day-assigned tasks. These were the one capture surface that never produced a real task: the
+   week planner already RENDERED S.tasks for each day, but its own "add a goal" input wrote here
+   instead, so anything typed into a day of the week was invisible to the day view, the inbox and
+   the backlog.
+   Deliberately NOT gated on a stamp. addPlanItem no longer writes to plan.items, so after the
+   first pass this list is permanently empty and the loop is a no-op — while a stamp would strand
+   the items again on any restore of a pre-fix backup, which is exactly the trap restorePreUnify
+   has to `delete obj.unifiedAt` to escape. Emptiness is the real guard. */
+function migratePlanItemsToUnified(){
+  let moved=0;
+  Object.keys(S.days).forEach(function(k){
+    const p=S.days[k]&&S.days[k].plan;
+    if(!p||!Array.isArray(p.items)||!p.items.length) return;
+    /* a goal ticked off three weeks ago completed three weeks ago — stamping doneAt with "now"
+       would make every historical item look freshly finished, and once completed tasks start
+       archiving on a doneAt age they'd all resurface for a minute first */
+    const parts=k.split('-').map(Number);
+    const dayTs=new Date(parts[0],parts[1]-1,parts[2],12,0,0).getTime();
+    p.items.forEach(function(it){
+      const text=String((it&&it.t)||'').trim(); if(!text) return;
+      S.tasks.push(makeUnit({text:text, kind:'task', day:k, done:!!(it&&it.done),
+        doneAt:(it&&it.done)?dayTs:null, envelope:'work', project:'Uncategorized',
+        source:'planitem'}));
+      moved++;
+    });
+    p.items=[];
+  });
+  if(moved) save();
+  return moved;
+}
 /* one-time import of open items from the "To-Do List" Notion database (all "work" envelope —
    none of these had "Personal" in their Notion Category property; tag = their Notion "project" value) */
 const NOTION_IMPORT_SEED=[
@@ -992,6 +1023,7 @@ function hydrateState(){
   if(S.mediBestSec===undefined) S.mediBestSec=0;
   rebalancePointsScale();
   importNotionSeed(); repairNotionLinks(); migrateBlockTasksToUnified();
+  migratePlanItemsToUnified();
   migrateToUnifiedItems(); normalizeUnits(); guessTaskModes();
   return healUnits();
 }
@@ -1959,19 +1991,17 @@ function weekKeyOf(k){ return weekDatesOf(k||vday())[0]; }
 function planOf(k){ return day(k).plan; }
 let manualPlanDay={};
 function togglePlanDay(k){ const cur=manualPlanDay[k]!==undefined?manualPlanDay[k]:(k===vday()); manualPlanDay[k]=!cur; render(); }
+/* Creates a REAL task assigned to that day, not a private plan-goal row. renderPlan already lists
+   S.tasks for each day, so what you type into a day of the week now shows up in that day's view,
+   its inbox, and every other surface — which is the whole point of typing it there. */
 function addPlanItem(k){
   const el=document.getElementById('planIn-'+k); if(!el) return;
-  const t=el.value.trim(); if(!t) return;
-  planOf(k).items.push({t:t,done:false});
-  el.value=''; save(); render();
+  const txt=el.value.trim(); if(!txt) return;
+  const t=addTask(txt,'work','Uncategorized');
+  if(t){ t.day=k; save(); }
+  el.value=''; render();
   requestAnimationFrame(function(){ const e2=document.getElementById('planIn-'+k); if(e2) e2.focus(); });
 }
-function togglePlanItem(k,i){
-  const p=planOf(k), it=p.items[i]; if(!it) return;
-  it.done=!it.done; if(it.done) celebrateBurst();
-  save(); render();
-}
-function delPlanItem(k,i,ev){ if(ev)ev.stopPropagation(); planOf(k).items.splice(i,1); save(); render(); }
 function setPlanNotes(k,v){ planOf(k).notes=v; save(); }
 /* ===================== task backlog ===================== */
 const ENVELOPES=['work','personal'];
@@ -3598,8 +3628,8 @@ function renderPlan(){
     const dayTasks=S.tasks.filter(function(tk){return tk.day===k&&!tk.blockId;});
     const isToday=k===t;
     const expanded=manualPlanDay[k]!==undefined?manualPlanDay[k]:isToday;
-    const doneN=p.items.filter(function(x){return x.done;}).length+dayTasks.filter(function(x){return x.done;}).length;
-    const totalN=p.items.length+dayTasks.length;
+    const doneN=dayTasks.filter(function(x){return x.done;}).length;
+    const totalN=dayTasks.length;
     const dnum=+k.split('-')[2];
     const isSel=k===vday();
     h+='<div class="planday'+(expanded?'':' collapsed')+(isToday?' istoday':'')+(isSel?' isselected':'')+'" '+
@@ -3609,12 +3639,7 @@ function renderPlan(){
        '<button class="btn tiny ghost" onclick="event.stopPropagation();openDay(\''+k+'\')">open</button></div>'+
        '<div class="pdbody">';
     dayTasks.forEach(function(tk){ h+=taskRowHTML(tk,'plan'); });
-    p.items.forEach(function(it,idx){
-      h+='<div class="plangoal'+(it.done?' done':'')+'"><input type="checkbox"'+(it.done?' checked':'')+' onchange="togglePlanItem(\''+k+'\','+idx+')">'+
-         '<span class="pgt">'+String(it.t).replace(/</g,'&lt;')+'</span>'+
-         '<button class="rowbtn" style="opacity:.4" onclick="delPlanItem(\''+k+'\','+idx+',event)">✕</button></div>';
-    });
-    h+='<div class="addtiny"><input id="planIn-'+k+'" placeholder="add a goal…" maxlength="50" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addPlanItem(\''+k+'\')}">'+
+    h+='<div class="addtiny"><input id="planIn-'+k+'" placeholder="add a task…" maxlength="50" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addPlanItem(\''+k+'\')}">'+
        '<button class="btn tiny soft" onclick="addPlanItem(\''+k+'\')">+</button></div>'+
        '<textarea class="plannotes" placeholder="notes…" onchange="setPlanNotes(\''+k+'\',this.value)">'+String(p.notes||'').replace(/</g,'&lt;')+'</textarea>'+
        '</div></div>';

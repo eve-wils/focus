@@ -394,10 +394,6 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .planday .pdcount{font-size:11px;color:var(--ink-3);font-weight:600}
 .planday .pdbody{padding:0 12px 10px}
 .planday.collapsed .pdbody{display:none}
-.plangoal{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px}
-.plangoal input[type=checkbox]{accent-color:var(--pink-deep);width:14px;height:14px;flex:0 0 auto}
-.plangoal.done .pgt{text-decoration:line-through;color:var(--ink-3)}
-.plangoal .pgt{flex:1;min-width:0}
 .plannotes{width:100%;border:none;border-top:1px dashed rgba(190,150,140,.2);background:transparent;
   padding:8px 2px 0;font-size:12px;resize:vertical;min-height:24px;outline:none;margin-top:4px;color:var(--ink-2)}
 .tbtagpill{font-size:9px;font-weight:600;color:var(--ink-3);border:1px solid var(--stroke);padding:1px 7px;border-radius:var(--r-pill);flex:0 0 auto;
