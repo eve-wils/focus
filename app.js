@@ -3682,15 +3682,6 @@ function renderPapers(){
     cnt.textContent=S.papers.length?done+'/'+S.papers.length+' with notes':'';
   }
 }
-function renderUnassignedBanner(){
-  const box=document.getElementById('unassignedBanner');
-  if(!box) return;
-  if(viewMode!=='today'){ box.style.display='none'; return; }
-  const n=S.tasks.filter(function(t){return isBacklogTask(t)&&t.day===null;}).length;
-  if(!n){ box.style.display='none'; return; }
-  box.style.display='';
-  box.innerHTML='<div class="unassignedbar" onclick="setView(\'planning\')">'+n+' unassigned task'+(n===1?'':'s')+' →</div>';
-}
 function render(){
   VIEWS.forEach(function(v){
     const tab=document.getElementById('vtab-'+v), box=document.getElementById(v+'View'), bt=document.getElementById('btab-'+v);
@@ -3734,7 +3725,7 @@ function render(){
   if(cupCaptionHeaderEl) cupCaptionHeaderEl.textContent=d.water+'/'+WATER_GOAL+'oz';
   if(viewMode==='notes'){ renderNotes(); return; }
   if(viewMode==='month'){ renderMonth(); return; }
-  if(viewMode==='planning'){ renderTaskBank(); renderFutureLog(); renderPlan(); renderUnassignedBanner(); return; }
+  if(viewMode==='planning'){ renderTaskBank(); renderFutureLog(); renderPlan(); return; }
   /* everything below here used to be gated to the today view only, back when every one of these
      cards lived there. Now most of them (water detail, habit streaks, meditation, books,
      movement, treats, spend, papers, today's-tasks) live in the more tab instead — but their
@@ -3742,7 +3733,7 @@ function render(){
      to just keep refreshing them every render() regardless of which tab is on screen, and only
      gate the two genuinely today-only pieces (the timeline itself and the quest dock). */
   if(viewMode==='today'){ renderTimeline(); renderDock(); }
-  renderTodayTasksCard(); renderPapers(); renderUnassignedBanner();
+  renderTodayTasksCard(); renderPapers();
   document.getElementById('cnt-day').textContent=d.blocks.filter(isBlockCleared).length+'/'+d.blocks.length+' blocks cleared';
   const v=vessel();
   const numCups=Math.max(1,Math.round(WATER_GOAL/v.oz));

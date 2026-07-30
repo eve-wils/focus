@@ -385,10 +385,6 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .futurebucket.drophover{background:rgba(157,184,159,.28);border-color:var(--lav-deep);border-style:solid}
 .futurebucket .fbhead{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
 .futurebucket .fbbody{display:flex;flex-direction:column;gap:2px}
-.unassignedbar{max-width:500px;margin:0 auto 20px;padding:11px 18px;border-radius:14px;
-  background:rgb(228, 132, 199);border:1px solid var(--stroke);
-  color:var(--ink);font-weight:600;font-size:13px;cursor:pointer;text-align:center;transition:border-color .2s}
-.unassignedbar:hover{border-color:var(--pink-deep)}
 /* ---------- papers ---------- */
 .paper{padding:10px 0;border-bottom:1px solid var(--rule)}
 .paper:last-of-type{border-bottom:none}
