@@ -671,6 +671,7 @@ function flushSave(){
    of edits produces one commit, not one per click. */
 const GH_OWNER='eve-wils', GH_REPO='focus_data', GH_BRANCH='main', GH_PATH='state.json';
 const GH_TOKEN_KEY='aura_gh_token';
+const GH_PRECONNECT_BACKUP_KEY='aura_gh_preconnect_backup';
 const GH_PUSH_DEBOUNCE_MS=2000;
 let ghToken=localStorage.getItem(GH_TOKEN_KEY)||'';
 let ghSha=null, ghSyncing=false, ghLastSyncAt=null, ghLastError=null, ghBranchReady=false;
@@ -810,10 +811,27 @@ function ghSyncPanelHtml(){
     '<button class="btn tiny ghost" onclick="ghDisconnect()">disconnect</button>'+
     '<button class="btn tiny ghost" onclick="toggleEdit(null)">close</button></div></div>';
 }
-function submitGhToken(){
+/* connecting used to push this browser's state straight away — fine on the device that's been
+   using the app all along, but a fresh browser/device has blank/default state, and pushing that
+   immediately silently erased whatever was already synced from elsewhere. Pull first, exactly
+   like a normal page load already does once a token is configured, and only push when the
+   branch genuinely has nothing yet. The pre-connect state is snapshotted to localStorage first,
+   purely as a recovery net, in case this device actually did have real data of its own that had
+   simply never been synced before. */
+async function submitGhToken(){
   const el=document.getElementById('ghTokenIn'); const t=el&&el.value;
   if(!t||!t.trim()){ toast('Paste a token first'); return; }
-  ghSetToken(t); toggleEdit(null); toast('Connected — syncing…'); ghPushNow();
+  ghSetToken(t); toggleEdit(null);
+  try{ localStorage.setItem(GH_PRECONNECT_BACKUP_KEY,JSON.stringify(S)); }catch(e){}
+  toast('Connecting…');
+  const remote=await ghPull();
+  if(remote){
+    adoptState(remote);
+    toast('Connected — loaded your existing data from GitHub');
+  } else {
+    ghPushNow();
+    toast('Connected — this device is now the starting point');
+  }
 }
 function ghDisconnect(){ ghSetToken(''); toggleEdit(null); toast('GitHub sync disconnected'); }
 async function ghPullNowManual(){
