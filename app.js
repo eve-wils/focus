@@ -3327,14 +3327,35 @@ function focusTick(){
   if(!focusState||!focusBlockId||!blockOf(focusBlockId)){ exitFocus(); return; }
   if(focusState.onBreak){
     focusState.breakSec--;
-    if(focusState.breakSec<=0){ focusState.onBreak=false; focusState.breakSec=0; }
+    if(focusState.breakSec<=0){ focusState.onBreak=false; focusState.breakSec=0; renderFocusSession(); return; }
   } else {
     focusState.activeSec++;
     /* a completed 30-minute segment pays out and offers a break, whether or not you take it —
        the reward is for the time actually spent, the break is just a wellness nudge on top */
-    if(focusState.activeSec%1800===0){ awardFocusSegment(); focusState.breakOffered=true; }
+    if(focusState.activeSec%1800===0){ awardFocusSegment(); focusState.breakOffered=true; renderFocusSession(); return; }
   }
-  renderFocusSession();
+  /* the common case, every second: patch just the numbers in place rather than the full
+     renderFocusSession() rebuild below — that does el.innerHTML= on the whole overlay, which
+     destroys and recreates whatever's focused (the notes textarea, the quick-capture input, a
+     task's editable title), forcing a blur that instantly dismisses the mobile keyboard mid-
+     type. A full rebuild only happens above, on the two actual structural transitions (a break
+     newly offered, a break ending) — not on the silent per-second tick. */
+  updateFocusTickDisplay();
+}
+function updateFocusTickDisplay(){
+  const b=focusBlockId&&blockOf(focusBlockId); if(!b) return;
+  const pct=blockProgressPct(b);
+  const fill=document.getElementById('focusBarFill'); if(fill) fill.style.width=pct+'%';
+  const meta=document.getElementById('focusMeta');
+  if(meta){
+    const d=day(vday());
+    meta.textContent=b.start+'–'+(b.end||'')+' · locked in '+mmss(focusState.activeSec)+
+      (d.focusSegs&&d.focusSegs[b.id]?' · '+d.focusSegs[b.id]+' segment'+(d.focusSegs[b.id]===1?'':'s')+' earned':'');
+  }
+  if(focusState.onBreak){
+    const breakBox=document.getElementById('focusBreakBox');
+    if(breakBox) breakBox.textContent='🌿 on a break — back in '+mmss(focusState.breakSec);
+  }
 }
 function awardFocusSegment(){
   const d=day(vday());
@@ -3371,10 +3392,10 @@ function renderFocusSession(){
   h+='<div class="focustop"><div class="focustitle">'+(BLOCK_TYPE_ICON[b.type]||'')+' '+
      String(b.focus||b.calTitle||'untitled').replace(/</g,'&lt;')+'</div>'+
      '<button class="btn tiny ghost" onclick="exitFocus()">✕ done for now</button></div>';
-  h+='<div class="focusbar"><div class="focusbarfill" style="width:'+pct+'%"></div></div>';
-  h+='<div class="focusmeta">'+b.start+'–'+(b.end||'')+' · locked in '+mmss(focusState.activeSec)+
+  h+='<div class="focusbar"><div class="focusbarfill" id="focusBarFill" style="width:'+pct+'%"></div></div>';
+  h+='<div class="focusmeta" id="focusMeta">'+b.start+'–'+(b.end||'')+' · locked in '+mmss(focusState.activeSec)+
      (d.focusSegs&&d.focusSegs[b.id]?' · '+d.focusSegs[b.id]+' segment'+(d.focusSegs[b.id]===1?'':'s')+' earned':'')+'</div>';
-  if(focusState.onBreak) h+='<div class="focusbreak">🌿 on a break — back in '+mmss(focusState.breakSec)+'</div>';
+  if(focusState.onBreak) h+='<div class="focusbreak" id="focusBreakBox">🌿 on a break — back in '+mmss(focusState.breakSec)+'</div>';
   else if(focusState.breakOffered)
     h+='<div class="focusbreakoffer">30 minutes in — take a 5 minute break?'+
        '<button class="btn tiny soft" onclick="startFocusBreak()">take it</button>'+

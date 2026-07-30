@@ -217,7 +217,7 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 /* ---------- lock-in focus mode ---------- */
 .focusoverlay{position:fixed;inset:0;background:var(--bgpage);z-index:300;overflow-y:auto;
   display:flex;justify-content:center;padding:32px 20px 60px}
-.focussheet{width:100%;max-width:640px}
+.focussheet{width:100%;max-width:640px;margin-top:auto;margin-bottom:auto}
 .focustop{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .focustitle{flex:1;font-family:var(--serif);font-size:22px;font-weight:700;color:var(--ink)}
 .focusbar{position:relative;height:10px;border-radius:99px;background:rgba(35,33,30,.08);overflow:hidden;margin-bottom:6px}
