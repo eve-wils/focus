@@ -56,6 +56,12 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
    picks), so the existing --ink/--ink-2 text colors — already tuned for that theme's typical
    light-or-dark background — read correctly here too without a separate light/dark text override */
 .hero .left{flex:1;min-width:260px;background:var(--grad-a);border-radius:var(--r-card);padding:18px 22px}
+/* secondary text (date, "today" label, the %) uses --ink-2/--ink-3 everywhere else in the app,
+   which is tuned for contrast against the plain --bgpage, not an arbitrary vivid gradient (found
+   via screenshot on the aurora glow preset, where a muted gray read as nearly invisible against a
+   saturated orange-to-violet band) — deriving from --ink via opacity instead guarantees it stays
+   legible on any gradient a theme picks, since --ink already has to contrast against it */
+.hero .left .date,.hero .left .lbl,.hero .left .pct{color:var(--ink);opacity:.65}
 .greetrow{display:flex;flex-direction:column}
 .hero .greet{font-family:var(--serif);font-size:var(--fs-2xl);font-weight:600;letter-spacing:-.01em}
 .hero .date{font-size:var(--fs-xs);color:var(--ink-2);margin-top:3px;letter-spacing:.04em}

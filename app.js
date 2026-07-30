@@ -74,7 +74,16 @@ const PRESET_THEMES=[
     pink:'#FF8FA8', pinkDeep:'#E8437A', mint:'#B49AE0', mintDeep:'#7451C4', fontKey:'rounded',
     hueBlue:'#8FC6E8', hueBlueDeep:'#3E85C2', hueViolet:'#D9B8F0', hueVioletDeep:'#9B5FE0',
     hueYellow:'#FFD98A', hueYellowDeep:'#E8A020', gradA1:'#FF8FA8', gradA2:'#FFD98A',
-    gradB1:'#B49AE0', gradB2:'#FF8FA8'}
+    gradB1:'#B49AE0', gradB2:'#FF8FA8'},
+  /* the "vivid cards floating on near-black" look from the dashboard-style inspiration — an
+     opt-in preset, not a DEFAULT_DARK_THEME replacement, since it's a much more saturated,
+     higher-contrast-per-surface aesthetic than the quiet default dark mode should commit to */
+  {id:'aurora', name:'aurora glow', mode:'dark', bgpage:'#0E0F13', glass:'#1A1B22', glassStrong:'#242530',
+    ink:'#F5F5F7', ink2:'#9A9BA3', ink3:'#5C5D66', stroke:'rgba(255,255,255,.12)', rule:'rgba(255,255,255,.06)',
+    pink:'#FF6FA8', pinkDeep:'#FF3D82', mint:'#5CE6B0', mintDeep:'#22C48C', fontKey:'inter',
+    hueBlue:'#5B8DEF', hueBlueDeep:'#2F65D6', hueViolet:'#B37FEA', hueVioletDeep:'#8A4FD1',
+    hueYellow:'#FFD166', hueYellowDeep:'#F2A900', gradA1:'#FF8A5B', gradA2:'#7B6FEA',
+    gradB1:'#FF6FA8', gradB2:'#5B8DEF'}
 ];
 /* default card order per column, across BOTH the today view (cols 0-2: todayColA/B/C) and the
    more view (cols 3-5: moreColA/B/C) — ids match each card's actual DOM id. Water lives in the
