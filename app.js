@@ -5,10 +5,14 @@ const DAY_START=360, DAY_END=1320; /* 6:00am – 10:00pm skeleton */
    Replaces the earlier elastic/floor-ceiling sizing: every block's on-screen height is now a
    true function of its clock duration, same rate for all of them, so 8am really is twice as far
    from 6am as 7am is. "Compact" per the ask that replaced elastic sizing — 0.95px/minute keeps
-   the full 6am-10pm day under 920px instead of a full 1:1 minute-per-pixel sprawl. */
-const GRID_PX_PER_MIN=0.95;
-const GRID_TOTAL_PX=Math.round((DAY_END-DAY_START)*GRID_PX_PER_MIN);
-function minToPx(min){ return Math.round((min-DAY_START)*GRID_PX_PER_MIN); }
+   the full 6am-10pm day under 920px instead of a full 1:1 minute-per-pixel sprawl.
+   On a phone that's still taller than the screen has room for, forcing a scroll through the
+   card just to see the whole day — so phone widths get a smaller ratio instead, computed live
+   (not a frozen const) so it tracks orientation changes. Every consumer of the ratio goes
+   through gridPxPerMin()/gridTotalPx() rather than reading a fixed number directly. */
+function gridPxPerMin(){ return (typeof window!=='undefined'&&window.innerWidth<=760)?0.5:0.95; }
+function gridTotalPx(){ return Math.round((DAY_END-DAY_START)*gridPxPerMin()); }
+function minToPx(min){ return Math.round((min-DAY_START)*gridPxPerMin()); }
 const DEFAULT_CATEGORIES=['home','research','admin','self-care','hobbies','school'];
 /* appearance: background/card/text + the app's two accent families (strawberry, matcha), plus
    a small curated set of font stacks — free-text font input isn't offered since a bad value
@@ -3200,7 +3204,7 @@ function blockGridBoxHTML(b,openId){
   const isOpen=openId===b.id;
   const startMin=Math.max(DAY_START,toMin(b.start));
   const endMin=Math.min(DAY_END,toMin(b.end||fromMin(toMin(b.start)+60)));
-  const top=minToPx(startMin), heightPx=Math.max(16,minToPx(endMin)-top);
+  const top=minToPx(startMin), heightPx=Math.max(20,minToPx(endMin)-top);
   const quests=blockQuests(b), btasks=blockTasksFor(b), ptasks=projectBlockTasks(b);
   /* ptasks are pulled fresh from the bank each render and are never "done" by definition (a done
      one drops out of the pull), so they'd only ever pad the denominator without a matching
@@ -3216,16 +3220,20 @@ function blockGridBoxHTML(b,openId){
      comment on that function), so dragging its edge would just get silently undone on the next
      render — resize handles only make sense on a block that's actually real. */
   const canResize=!isUnassignedBlock(b);
+  /* mousedown only — no ontouchstart here. Every real block has one of these 8px strips at each
+     edge, and a scroll swipe on a phone routinely starts with a finger right on one, silently
+     turning "I'm scrolling" into "I'm resizing this block." Touch users still get to change a
+     block's time via the start/end inputs in its detail panel. */
   return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
     'ondragover="event.preventDefault();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onBlockDrop(event,\''+b.id+'\')" '+
     'onclick="toggleBlock(\''+b.id+'\')" title="'+(empty?'click to add a focus':'click for details')+'">'+
-    (canResize?'<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'top\')"></div>':'')+
+    (canResize?'<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')"></div>':'')+
     '<span class="gtime">'+b.start+'–'+(b.end||'')+'</span>'+
     (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon" title="'+BLOCK_TYPE_LABEL[b.type]+' block">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
     (empty&&!previewText?'<span class="gfocus emptyhint">+ add focus</span>':'<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>')+
     (totalCount?'<span class="progdot">'+doneCount+'/'+totalCount+'</span>':'')+
     (b.fromCal?'<span class="caltag">cal</span>':'')+
-    (canResize?'<div class="reshandle bottom" onmousedown="startBlockResize(event,\''+b.id+'\',\'bottom\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'bottom\')"></div>':'')+
+    (canResize?'<div class="reshandle bottom" onmousedown="startBlockResize(event,\''+b.id+'\',\'bottom\')"></div>':'')+
     '</div>';
 }
 /* the detail panel: subtasks, notes, the editable time fields, delete — everything that used to
@@ -3375,7 +3383,7 @@ function renderTimeline(){
   groupTimelineSegments(d.blocks).forEach(function(seg){
     const segStartMin=toMin(seg.run[0].start);
     const segEndMin=toMin(seg.run[seg.run.length-1].end||fromMin(segStartMin+60));
-    const top=minToPx(Math.max(DAY_START,segStartMin)), height=Math.max(16,minToPx(Math.min(DAY_END,segEndMin))-top);
+    const top=minToPx(Math.max(DAY_START,segStartMin)), height=Math.max(20,minToPx(Math.min(DAY_END,segEndMin))-top);
     if(seg.type==='gap'){
       const rk='gap-'+seg.run[0].id, expanded=!!manualRollup[rk];
       if(!expanded){
@@ -3410,30 +3418,29 @@ function renderTimeline(){
     if(nm>=DAY_START&&nm<=DAY_END) body+='<div class="gridnowline" style="top:'+minToPx(nm)+'px" data-lbl="'+hhmm(new Date())+'"></div>';
   }
   document.getElementById('timeline').innerHTML=
-    '<div class="gridwrap"><div class="gridaxis" style="height:'+GRID_TOTAL_PX+'px">'+axis+'</div>'+
-    '<div class="gridbody" style="height:'+GRID_TOTAL_PX+'px">'+body+'</div></div>';
+    '<div class="gridwrap"><div class="gridaxis" style="height:'+gridTotalPx()+'px">'+axis+'</div>'+
+    '<div class="gridbody" style="height:'+gridTotalPx()+'px">'+body+'</div></div>';
   renderBlockDetailPanel();
 }
-/* ---------- drag-to-resize: mouse on desktop, touch too, alongside the time-input fields ----------
+/* ---------- drag-to-resize: mouse only, alongside the time-input fields ----------
    Added on top of (not instead of) the editable start/end inputs in the detail panel — inputs
-   stay the reliable path on a phone, this is the fast path with a mouse. Snapped to 5-minute
-   increments so a shaky drag doesn't leave a block ending at 2:47. */
+   are the only path on a phone (see the reshandle comment above for why touch was dropped),
+   this is the fast path with a mouse. Snapped to 5-minute increments so a shaky drag doesn't
+   leave a block ending at 2:47. */
 let resizeState=null;
-function resizeEventY(ev){ return (ev.touches&&ev.touches[0])?ev.touches[0].clientY:ev.clientY; }
+function resizeEventY(ev){ return ev.clientY; }
 function startBlockResize(ev,id,edge){
   ev.preventDefault(); ev.stopPropagation();
   const b=blockOf(id); if(!b) return;
   resizeState={id:id, edge:edge, startY:resizeEventY(ev), origStart:toMin(b.start), origEnd:toMin(b.end||fromMin(toMin(b.start)+60))};
   document.addEventListener('mousemove',onBlockResizeMove);
   document.addEventListener('mouseup',onBlockResizeEnd);
-  document.addEventListener('touchmove',onBlockResizeMove,{passive:false});
-  document.addEventListener('touchend',onBlockResizeEnd);
 }
 function onBlockResizeMove(ev){
   if(!resizeState) return;
   if(ev.cancelable) ev.preventDefault();
   const deltaPx=resizeEventY(ev)-resizeState.startY;
-  const deltaMin=Math.round(deltaPx/GRID_PX_PER_MIN/5)*5;
+  const deltaMin=Math.round(deltaPx/gridPxPerMin()/5)*5;
   if(resizeState.edge==='top') setBlockStart(resizeState.id,fromMin(resizeState.origStart+deltaMin));
   else setBlockEnd(resizeState.id,fromMin(resizeState.origEnd+deltaMin));
 }
@@ -3441,8 +3448,6 @@ function onBlockResizeEnd(){
   resizeState=null;
   document.removeEventListener('mousemove',onBlockResizeMove);
   document.removeEventListener('mouseup',onBlockResizeEnd);
-  document.removeEventListener('touchmove',onBlockResizeMove);
-  document.removeEventListener('touchend',onBlockResizeEnd);
 }
 function renderPlan(){
   const dates=weekDates();
@@ -4232,4 +4237,12 @@ function onTouchDragEnd(){
   document.addEventListener('touchcancel',onTouchDragEnd);
   window.addEventListener('pagehide',function(){ flushSave(); flushGhPushUrgent(); });
   document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden'){ flushSave(); flushGhPushUrgent(); } });
+  /* rotating a phone crosses the gridPxPerMin() breakpoint in either direction, so the timeline
+     needs a re-render to pick up the new ratio — it doesn't otherwise get one until the next
+     unrelated interaction. */
+  let resizeRenderTimer=null;
+  window.addEventListener('resize',function(){
+    clearTimeout(resizeRenderTimer);
+    resizeRenderTimer=setTimeout(function(){ if(viewMode==='today') render(); },150);
+  });
 })();
