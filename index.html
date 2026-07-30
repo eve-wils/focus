@@ -245,6 +245,10 @@
         <header draggable="true" ondragstart="onCardDragStart(event,'todayTasksCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('todayTasksCard')"><span class="lbl">inbox</span><span class="sub" id="todayTasksN"></span><span class="cardchev">▾</span></header>
         <div class="hbar" style="margin-bottom:10px"><div class="bar"><div class="fill" id="todayTasksBar" style="width:0%"></div></div></div>
         <div id="todayTasksList"></div>
+        <div class="addrow">
+          <input id="todayTaskIn" placeholder="add a task…" maxlength="50" onkeydown="if(event.key==='Enter'){event.preventDefault();addTodayTask()}">
+          <button class="btn tiny soft" onclick="addTodayTask()">add</button>
+        </div>
       </div>
       <div class="card" id="questCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onQuestDockTaskDrop(event);onCardDrop(event,'questCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'questCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('questCard')"><span class="lbl">side quests</span><span class="sub" id="qcnt"></span><span class="cardchev">▾</span></header>

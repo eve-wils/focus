@@ -1994,14 +1994,17 @@ function togglePlanDay(k){ const cur=manualPlanDay[k]!==undefined?manualPlanDay[
 /* Creates a REAL task assigned to that day, not a private plan-goal row. renderPlan already lists
    S.tasks for each day, so what you type into a day of the week now shows up in that day's view,
    its inbox, and every other surface — which is the whole point of typing it there. */
-function addPlanItem(k){
-  const el=document.getElementById('planIn-'+k); if(!el) return;
+function addDayTask(k,inputId){
+  const el=document.getElementById(inputId); if(!el) return;
   const txt=el.value.trim(); if(!txt) return;
   const t=addTask(txt,'work','Uncategorized');
   if(t){ t.day=k; save(); }
   el.value=''; render();
-  requestAnimationFrame(function(){ const e2=document.getElementById('planIn-'+k); if(e2) e2.focus(); });
+  requestAnimationFrame(function(){ const e2=document.getElementById(inputId); if(e2) e2.focus(); });
 }
+function addPlanItem(k){ addDayTask(k,'planIn-'+k); }
+/* the inbox files into whichever day you're looking at, not always today */
+function addTodayTask(){ addDayTask(vday(),'todayTaskIn'); }
 function setPlanNotes(k,v){ planOf(k).notes=v; save(); }
 /* ===================== task backlog ===================== */
 const ENVELOPES=['work','personal'];
@@ -3795,14 +3798,17 @@ function renderTodayTasksCard(){
   const allToday=S.tasks.filter(function(t){return t.day===tKey;});
   const card=document.getElementById('todayTasksCard');
   if(!card) return;
-  if(!allToday.length||allToday.every(function(t){return t.done;})){ card.style.display='none'; return; }
+  /* the card stays up even with nothing on the day — it holds the only way to
+     add a task from the day view, so hiding it when empty stranded you. */
   card.style.display='';
   const doneN=allToday.filter(function(t){return t.done;}).length;
-  const bar=document.getElementById('todayTasksBar'); if(bar) bar.style.width=Math.round(doneN/allToday.length*100)+'%';
-  const n=document.getElementById('todayTasksN'); if(n) n.textContent=doneN+'/'+allToday.length;
+  const pct=allToday.length?Math.round(doneN/allToday.length*100):0;
+  const bar=document.getElementById('todayTasksBar'); if(bar) bar.style.width=pct+'%';
+  const n=document.getElementById('todayTasksN'); if(n) n.textContent=allToday.length?doneN+'/'+allToday.length:'';
   const unpinned=allToday.filter(function(t){return !t.blockId;}).sort(byOrder);
   const list=document.getElementById('todayTasksList');
-  if(list) list.innerHTML=unpinned.length?unpinned.map(function(t){return taskRowHTML(t,'flat');}).join(''):'<div class="qempty">everything is pinned into the calendar below</div>';
+  if(list) list.innerHTML=unpinned.length?unpinned.map(function(t){return taskRowHTML(t,'flat');}).join('')
+    :'<div class="qempty">'+(allToday.length?'everything is pinned into the calendar below':'nothing on this day yet — add one below')+'</div>';
 }
 function renderPapers(){
   const list=document.getElementById('paperList');
