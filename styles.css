@@ -93,7 +93,7 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .viewtabs{display:flex;gap:2px;background:var(--glass-strong);border:1px solid var(--stroke);border-radius:var(--r-pill);padding:3px}
 .vtab{font-size:11.5px;font-weight:600;padding:6px 14px;border-radius:var(--r-pill);border:1px solid transparent;color:var(--ink-2);background:transparent}
 .vtab.on{background:var(--ink);color:var(--bgpage);border-color:var(--ink)}
-.grid{display:grid;grid-template-columns:minmax(0,0.95fr) minmax(0,1.15fr) minmax(0,0.95fr);gap:18px;align-items:start}
+.grid{display:grid;grid-template-columns:minmax(0,0.8fr) minmax(0,1.5fr) minmax(0,0.8fr);gap:18px;align-items:start}
 .notesgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
 @media (max-width:900px){ .notesgrid{grid-template-columns:1fr} }
 .grid.grid3plan{grid-template-columns:minmax(0,0.85fr) minmax(0,1.15fr) minmax(0,0.9fr);align-items:stretch}
@@ -116,6 +116,14 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .ritualpanel .phead:active{cursor:grabbing}
 .card.dragging,.ritualpanel.dragging{opacity:.4}
 .card.dragging:hover{box-shadow:var(--shadow-card);transform:none}
+/* bento hierarchy: hero cards (day shift, meditation, bookshelf) get more room and a soft gradient
+   tint to read as the visual anchors; :not(#card-day) keeps the timeline's dashed gridlines and
+   category-colored blocks at full contrast instead of tinting over them */
+.card.hero{padding:28px}
+.card.hero:not(#card-day){background:linear-gradient(165deg,var(--glass-strong),var(--glass))}
+.card.hero>header .lbl{font-size:12px}
+.card.compact{padding:16px 18px}
+.card.compact>header{margin-bottom:10px;padding-bottom:7px}
 .dropzone{height:10px;margin:1px 0;border-radius:5px;transition:height .12s ease,background .12s ease;}
 .dropzone.active{height:36px;background:rgba(147,173,100,.16);border:1.5px dashed var(--mint-deep)}
 .settingspanel{position:fixed;inset:0;background:rgba(28,27,25,.35);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:60px 20px}
@@ -750,6 +758,8 @@ body.touchdragging .dropzone{height:34px;background:rgba(147,173,100,.12)}
   .grid,.grid.grid3plan{grid-template-columns:1fr;gap:14px}
   .col{gap:14px}
   .card{padding:16px 15px;border-radius:17px}
+  .card.hero{padding:19px 17px}
+  .card.compact{padding:13px 14px}
   .card > header{margin-bottom:12px}
   .ritualpanel .pbody{padding:0 12px 12px}
   .addrow,.addchip{flex-wrap:wrap}

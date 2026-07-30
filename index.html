@@ -124,7 +124,7 @@
   <div id="todayView">
   <div class="grid">
     <div class="col" id="todayColA" ondragover="event.preventDefault()" ondrop="onColDrop(event,0)">
-      <div class="card" id="waterCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'waterCard')">
+      <div class="card compact" id="waterCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'waterCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'waterCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('waterCard')"><span class="lbl">water</span><span class="sub" id="waterHint"></span><span class="cardchev">▾</span></header>
         <div class="waterline">
           <div class="waterbar" id="waterBar" onclick="cupClick()" title="tap = half a cup, double-tap = a full cup">
@@ -149,7 +149,7 @@
         <header draggable="true" ondragstart="onCardDragStart(event,'habitStreakCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('habitStreakCard')"><span class="lbl">habit streaks</span><span class="cardchev">▾</span></header>
         <div id="habitStreakRows"></div>
       </div>
-      <div class="card" id="meditationCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'meditationCard')">
+      <div class="card hero" id="meditationCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'meditationCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'meditationCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('meditationCard')"><span class="lbl">meditation</span><span class="sub" id="mediCount"></span><span class="cardchev">▾</span></header>
         <div class="meditabs">
           <button class="mtab on" id="mtab-countdown" onclick="setMediMode('countdown')">countdown</button>
@@ -180,7 +180,7 @@
         </div>
         <div class="sub" style="font-size:11px;color:var(--ink-3);margin-top:8px" id="mediWk"></div>
       </div>
-      <div class="card" id="bookshelfCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'bookshelfCard')">
+      <div class="card hero" id="bookshelfCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'bookshelfCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'bookshelfCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('bookshelfCard')"><span class="lbl">bookshelf</span><span class="sub" id="pagesWk"></span><button class="btn tiny ghost" onclick="event.stopPropagation();undoBook()">undo</button><span class="cardchev">▾</span></header>
         <div id="bookList" style="max-height:180px;overflow-y:auto"></div>
         <div class="addrow">
@@ -228,7 +228,7 @@
       </div>
     </div>
     <div class="col" id="todayColB" ondragover="event.preventDefault()" ondrop="onColDrop(event,1)">
-      <div class="card blockhost" id="card-day" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'card-day')">
+      <div class="card blockhost hero" id="card-day" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'card-day')">
         <header draggable="true" ondragstart="onCardDragStart(event,'card-day')" ondragend="onCardDragEnd(event)"><span class="lbl">day shift</span><span class="sub" id="cnt-day"></span>
           <button class="btn tiny soft" style="margin-left:8px" onclick="event.stopPropagation();quickCreateBlock()" title="new block, right now">+</button></header>
         <div class="timeline" id="timeline"></div>
@@ -256,7 +256,7 @@
         </div>
         <div class="sub" style="font-size:11px;color:var(--ink-3);margin-top:6px">drag any task here to send it to your side quests</div>
       </div>
-      <div class="card" id="papersCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'papersCard')">
+      <div class="card compact" id="papersCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'papersCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'papersCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('papersCard')"><span class="lbl">papers</span><span class="sub" id="papersCnt"></span><span class="cardchev">▾</span></header>
         <div id="paperList"></div>
         <div class="addstack">
@@ -265,7 +265,7 @@
           <button class="btn tiny soft" onclick="addPaperFromForm()">add paper</button>
         </div>
       </div>
-      <div class="card" id="treatsCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'treatsCard')">
+      <div class="card compact" id="treatsCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'treatsCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'treatsCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('treatsCard')"><span class="lbl">treats</span><span class="cardchev">▾</span></header>
         <div class="moneyline"><span class="pv" id="bankV">$0.00</span><span class="pl" id="bankLbl">saved up</span></div>
         <div class="weekline" id="weekLine">this week so far: <b id="weekV">$0.00</b></div>
@@ -278,7 +278,7 @@
         </div>
         <div class="redeemed-line" id="redeemedLine"></div>
       </div>
-      <div class="card" id="spendCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'spendCard')">
+      <div class="card compact" id="spendCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'spendCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'spendCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('spendCard')"><span class="lbl">spending log</span><span class="sub">unnecessary spends make a deficit or savings</span><span class="cardchev">▾</span></header>
         <div id="spendList"></div>
         <div class="addrow">
