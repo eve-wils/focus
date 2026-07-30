@@ -520,6 +520,16 @@ function onColDrop(ev,colIdx){
   S.layout.cols[colIdx].push(draggedId);
   save(); applyLayoutDom();
 }
+/* one-shot staggered entrance, called once from boot(). Scoped to #todayView because every other
+   view starts display:none — animating those too would replay the entrance out of context the
+   first time the user opens that tab. applyLayoutDom() runs again after every drag but never
+   re-adds .enter, so reordering a card doesn't replay it. */
+function playCardEntrance(){
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cards=document.querySelectorAll('#todayView .card');
+  cards.forEach(function(el,i){ el.style.setProperty('--enter-i',i); el.classList.add('enter'); });
+  setTimeout(function(){ cards.forEach(function(el){ el.classList.remove('enter'); el.style.removeProperty('--enter-i'); }); }, 900+cards.length*60);
+}
 /* physically reorders the card DOM nodes to match S.layout.cols — deliberately NOT called from
    the main render() hot path (which runs every second for live timers) since moving a focused
    input/contenteditable node around the DOM blurs it. Only called at boot and right after a
@@ -4349,6 +4359,7 @@ function onTouchDragEnd(){
   await load();
   reconcile(); render(); mediPaint(); maybeAutoBackup();
   applyLayoutDom(); applyCollapsedDom(); applyTheme();
+  playCardEntrance();
   lastSnapshot=JSON.stringify(S);
   setInterval(tickTimers,1000);
   setInterval(function(){ if(today()!==S.lastDate){ reconcile(); render(); } },60000);

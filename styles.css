@@ -116,6 +116,8 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .ritualpanel .phead:active{cursor:grabbing}
 .card.dragging,.ritualpanel.dragging{opacity:.4}
 .card.dragging:hover{box-shadow:var(--shadow-card);transform:none}
+.card.enter{animation:cardEnter .5s cubic-bezier(.2,.8,.3,1) backwards;animation-delay:calc(var(--enter-i,0) * 60ms)}
+@keyframes cardEnter{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 /* bento hierarchy: hero cards (day shift, meditation, bookshelf) get more room and a soft gradient
    tint to read as the visual anchors; :not(#card-day) keeps the timeline's dashed gridlines and
    category-colored blocks at full contrast instead of tinting over them */
