@@ -107,8 +107,8 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .presetthemesrow{display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-1)}
 .presetswatch{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;
   border-radius:14px;border:1.5px solid var(--stroke);background:var(--glass-strong);
-  font-size:10.5px;font-weight:600;color:var(--ink-2);min-width:76px;transition:transform .15s,border-color .15s}
-.presetswatch:hover{transform:translateY(-2px);border-color:var(--pink-deep)}
+  font-size:10.5px;font-weight:600;color:var(--ink-2);min-width:76px;transition:transform .15s,border-color .15s,box-shadow .15s}
+.presetswatch:hover{transform:translateY(-2px);border-color:var(--pink-deep);box-shadow:var(--shadow-float)}
 .presetswatch.on{border-color:var(--ink);color:var(--ink)}
 .pschip{width:44px;height:28px;border-radius:var(--r-sm);border:1px solid var(--stroke);display:flex;
   align-items:flex-end;justify-content:center;gap:4px;padding-bottom:4px;overflow:hidden}
@@ -221,7 +221,7 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 /* the detail panel now expands in place, covering the rest of the day-shift card instead of
    sliding out from the side — .blockhost (the card itself) is its positioning parent */
 .blockhost{position:relative}
-.blockdetail{position:absolute;inset:0;background:var(--bgpage);border-radius:var(--r-card);z-index:20;
+.blockdetail{position:absolute;inset:0;background:var(--glass);border-radius:20px;z-index:20;
   overflow-y:auto;padding:20px;box-shadow:var(--shadow-float);
   animation:blockExpandIn .18s cubic-bezier(.2,.7,.3,1)}
 @keyframes blockExpandIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
