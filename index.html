@@ -3477,13 +3477,16 @@ function quickCreateBlock(){
    Two gestures, one destination (createBlockAt): drag across blank time like Google Calendar, or
    double-click once to mark a start and again to mark an end. Both snap to 15 minutes and both
    bail out if the pointer actually landed on an existing block — that's its own click target. */
+/* mousedown only — no ontouchstart. On a phone, scrolling the calendar routinely moves more than
+   the 6px slop below before your finger lifts, so every scroll swipe over blank calendar space
+   was silently becoming "drag to create a block." Touch still gets double-click-twice
+   (ondblclick, via a double-tap) and the "+" quick-create button in the card header. */
 function gridCanvasHandlers(origin){
-  return 'data-origin="'+origin+'" onmousedown="startCanvasCreate(event)" ontouchstart="startCanvasCreate(event)" ondblclick="onCanvasDblClick(event)"';
+  return 'data-origin="'+origin+'" onmousedown="startCanvasCreate(event)" ondblclick="onCanvasDblClick(event)"';
 }
 function canvasEventY(ev,el){
   const rect=el.getBoundingClientRect();
-  const clientY=(ev.touches&&ev.touches[0])?ev.touches[0].clientY:ev.clientY;
-  return clientY-rect.top;
+  return ev.clientY-rect.top;
 }
 let canvasDrag=null;
 function startCanvasCreate(ev){
@@ -3492,8 +3495,6 @@ function startCanvasCreate(ev){
   canvasDrag={el:el, origin:parseInt(el.dataset.origin,10), startPx:canvasEventY(ev,el), moved:false};
   document.addEventListener('mousemove',onCanvasCreateMove);
   document.addEventListener('mouseup',onCanvasCreateEnd);
-  document.addEventListener('touchmove',onCanvasCreateMove,{passive:false});
-  document.addEventListener('touchend',onCanvasCreateEnd);
 }
 function onCanvasCreateMove(ev){
   if(!canvasDrag) return;
@@ -3516,8 +3517,6 @@ function onCanvasCreateMove(ev){
 function onCanvasCreateEnd(){
   document.removeEventListener('mousemove',onCanvasCreateMove);
   document.removeEventListener('mouseup',onCanvasCreateEnd);
-  document.removeEventListener('touchmove',onCanvasCreateMove);
-  document.removeEventListener('touchend',onCanvasCreateEnd);
   if(!canvasDrag) return;
   const ghost=canvasDrag.el.querySelector('.creatorghost'); if(ghost) ghost.remove();
   if(canvasDrag.moved&&canvasDrag.ghostStart!==undefined) createBlockAt(fromMin(canvasDrag.ghostStart),canvasDrag.ghostEnd-canvasDrag.ghostStart);
