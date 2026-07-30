@@ -34,12 +34,15 @@ const DEFAULT_DARK_THEME={mode:'dark', bgpage:'#17181B', glass:'#212327', glassS
   hueBlue:'#2E3A4A', hueBlueDeep:'#6FA0D8', hueViolet:'#3A2E4A', hueVioletDeep:'#A47FD9',
   hueYellow:'#4A4326', hueYellowDeep:'#D9BB4A', gradA1:'#2A3B33', gradA2:'#274056',
   gradB1:'#3D2A30', gradB2:'#35303F'};
+/* real webfonts (loaded in index.html's <head>) instead of the old OS-font-fallback stacks —
+   most people don't have Inter/Trebuchet actually installed, so those used to silently fall back
+   to whatever generic sans/serif the OS shipped; each of these five now has real character */
 const FONT_STACKS={
-  inter:"'Inter','Helvetica Neue',Helvetica,'Hiragino Kaku Gothic ProN','Yu Gothic',Arial,sans-serif",
-  serif:"Georgia,'Times New Roman',serif",
-  rounded:"'Trebuchet MS',Verdana,sans-serif",
-  system:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
-  mono:"'Courier New',ui-monospace,monospace"
+  inter:"'Inter','Helvetica Neue',Helvetica,Arial,sans-serif",
+  serif:"'Fraunces',Georgia,'Times New Roman',serif",
+  rounded:"'Quicksand','Trebuchet MS',Verdana,sans-serif",
+  system:"'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif",
+  mono:"'Space Mono','Courier New',ui-monospace,monospace"
 };
 /* five one-tap presets, same shape as DEFAULT_THEME/DEFAULT_DARK_THEME — picking one just replaces
    S.theme wholesale (see applyPresetTheme), same as switching light/dark mode does. Anyone can still
