@@ -677,7 +677,7 @@ function flushSave(){
 const GH_OWNER='eve-wils', GH_REPO='focus_data', GH_BRANCH='main', GH_PATH='state.json';
 const GH_TOKEN_KEY='aura_gh_token';
 const GH_PRECONNECT_BACKUP_KEY='aura_gh_preconnect_backup';
-const GH_PUSH_DEBOUNCE_MS=2000;
+const GH_PUSH_DEBOUNCE_MS=100000;
 let ghToken=localStorage.getItem(GH_TOKEN_KEY)||'';
 let ghSha=null, ghSyncing=false, ghLastSyncAt=null, ghLastError=null, ghBranchReady=false;
 let ghSaveTimer=null, ghPushInFlight=false, ghPushQueued=false;
