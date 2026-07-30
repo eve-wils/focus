@@ -3874,7 +3874,10 @@ function render(){
     }
     waterDivEl.innerHTML=dh;
   }
-  document.getElementById('cupCaption').textContent=d.water+' / '+WATER_GOAL+' oz · '+fmtCups(halfSteps)+' of '+numCups+' '+v.name.toLowerCase()+' cups';
+  const cupCaptionEl=document.getElementById('cupCaption');
+  cupCaptionEl.textContent='';
+  const wozn=document.createElement('span'); wozn.className='wozn'; wozn.textContent=d.water+' / '+WATER_GOAL+' oz';
+  cupCaptionEl.append(wozn,' · '+fmtCups(halfSteps)+' of '+numCups+' '+v.name.toLowerCase()+' cups');
   document.getElementById('waterHint').textContent=d.water>=WATER_GOAL?'goal met':(WATER_GOAL-d.water)+' oz to go';
   document.getElementById('vesselSel').innerHTML=S.vessels.map(function(x,i){
     return '<option value="'+i+'"'+(i===S.vesselIdx?' selected':'')+'>'+x.name+' · '+x.oz+'oz</option>';}).join('');
