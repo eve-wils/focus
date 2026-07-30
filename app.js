@@ -121,14 +121,19 @@ const ACTS=[
   {id:'hike', name:'hike', checklist:OUTDOOR_CHECKLIST}
 ];
 const BOOK_COLORS=['#A48DE8','#F09CC0','#7FB8DC','#F5CE58','#8ED0A0','#E88DA4'];
-/* matcha ↔ strawberry: alternating soft green and pink block fills with a deeper edge/accent */
+/* matcha ↔ strawberry: alternating green and pink block fills with a deeper edge/accent — built
+   from the current theme's own two accent variables (set by applyTheme() from S.theme) rather
+   than fixed hex codes, so switching themes recolors the calendar along with everything else
+   instead of leaving blocks stuck on the original palette. The lighter variants blend toward
+   transparent so the page background (also theme-dependent) shows through, rather than mixing
+   toward a hardcoded white/black that could clash with a dark theme. */
 const BLOCK_PALETTE=[
-  {bg:'#EAF1DD', edge:'#93AD64'},  /* matcha */
-  {bg:'#FBE4E9', edge:'#E7A6B7'},  /* strawberry cream */
-  {bg:'#E1EBCF', edge:'#85A957'},  /* deeper matcha */
-  {bg:'#F6D9E1', edge:'#DCAAC0'},  /* deeper strawberry cream */
-  {bg:'#F0F4E4', edge:'#A9C480'},  /* pale matcha */
-  {bg:'#FCE9EE', edge:'#EFB6AC'}   /* pale strawberry cream */
+  {bg:'var(--mint)', edge:'var(--mint-deep)'},
+  {bg:'var(--pink)', edge:'var(--pink-deep)'},
+  {bg:'color-mix(in srgb, var(--mint) 70%, transparent)', edge:'var(--mint-deep)'},
+  {bg:'color-mix(in srgb, var(--pink) 70%, transparent)', edge:'var(--pink-deep)'},
+  {bg:'color-mix(in srgb, var(--mint) 45%, transparent)', edge:'var(--mint-deep)'},
+  {bg:'color-mix(in srgb, var(--pink) 45%, transparent)', edge:'var(--pink-deep)'}
 ];
 function blockHash(id){ let h=0; for(let i=0;i<String(id).length;i++){ h=(h*31+String(id).charCodeAt(i))>>>0; } return h; }
 function blockColor(b){ return BLOCK_PALETTE[blockHash(b.id)%BLOCK_PALETTE.length]; }
@@ -3023,7 +3028,7 @@ function addSpendForDay(dayKey){
 function downloadSnapshot(silent){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='aura-farm-backup-'+today()+'.json'; a.click();
+  a.download='lock-in-backup-'+today()+'.json'; a.click();
   S.lastBackup=today(); save();
   if(!silent) toast('Backup downloaded'); render();
 }
@@ -3035,7 +3040,7 @@ function onImportFile(ev){
     try{
       const obj=JSON.parse(r.result);
       if(obj&&obj.v===4) adoptState(obj);
-      else toast('That file doesn\u2019t look like an Aura Farm backup');
+      else toast('That file doesn\u2019t look like a Lock In backup');
     }catch(e){ toast('Could not read that file'); }
   };
   r.readAsText(f);
@@ -3059,7 +3064,7 @@ function restoreFromPaste(){
   if(!txt){ toast('Paste your backup JSON first'); return; }
   let obj=null;
   try{ obj=JSON.parse(txt); }catch(e){ toast('That isn\u2019t valid JSON \u2014 copy the whole file'); return; }
-  if(!obj||obj.v!==4){ toast('That doesn\u2019t look like an Aura Farm backup'); return; }
+  if(!obj||obj.v!==4){ toast('That doesn\u2019t look like a Lock In backup'); return; }
   adoptState(obj);
 }
 function exportData(){ downloadSnapshot(false); }
