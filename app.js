@@ -142,22 +142,29 @@ const ACTS=[
   {id:'hike', name:'hike', checklist:OUTDOOR_CHECKLIST}
 ];
 const BOOK_COLORS=['#A48DE8','#F09CC0','#7FB8DC','#F5CE58','#8ED0A0','#E88DA4'];
-/* matcha ↔ strawberry: alternating green and pink block fills with a deeper edge/accent — built
-   from the current theme's own two accent variables (set by applyTheme() from S.theme) rather
-   than fixed hex codes, so switching themes recolors the calendar along with everything else
-   instead of leaving blocks stuck on the original palette. The lighter variants blend toward
-   transparent so the page background (also theme-dependent) shows through, rather than mixing
-   toward a hardcoded white/black that could clash with a dark theme. */
-const BLOCK_PALETTE=[
+/* the 5-hue accent set (set by applyTheme() from S.theme) shared by calendar blocks, task/project
+   category chips, and priority pills — one hash function, one palette, so the same category or
+   block type always reads as the same color everywhere it shows up, not just decoratively varied. */
+const CATEGORY_PALETTE=[
+  {bg:'var(--blue)', edge:'var(--blue-deep)'},
   {bg:'var(--mint)', edge:'var(--mint-deep)'},
+  {bg:'var(--violet)', edge:'var(--violet-deep)'},
   {bg:'var(--pink)', edge:'var(--pink-deep)'},
-  {bg:'color-mix(in srgb, var(--mint) 70%, transparent)', edge:'var(--mint-deep)'},
-  {bg:'color-mix(in srgb, var(--pink) 70%, transparent)', edge:'var(--pink-deep)'},
-  {bg:'color-mix(in srgb, var(--mint) 45%, transparent)', edge:'var(--mint-deep)'},
-  {bg:'color-mix(in srgb, var(--pink) 45%, transparent)', edge:'var(--pink-deep)'}
+  {bg:'var(--yellow)', edge:'var(--yellow-deep)'}
 ];
 function blockHash(id){ let h=0; for(let i=0;i<String(id).length;i++){ h=(h*31+String(id).charCodeAt(i))>>>0; } return h; }
-function blockColor(b){ return BLOCK_PALETTE[blockHash(b.id)%BLOCK_PALETTE.length]; }
+function categoryColor(name){ return CATEGORY_PALETTE[blockHash(String(name))%CATEGORY_PALETTE.length]; }
+/* block color is now information-bearing, not a decorative hash-of-id alternation: ritual blocks
+   are always violet, an open-ended block is always yellow, a project block picks up its own
+   category's color (so the block and every chip for that category match), and a plain
+   single-focus block — the majority case, since category only exists on project blocks — is
+   the shared default blue. */
+function blockColor(b){
+  if(b.type==='ritual') return CATEGORY_PALETTE[2];
+  if(b.type==='project'&&b.category) return categoryColor(b.category);
+  if(b.type==='open') return CATEGORY_PALETTE[4];
+  return CATEGORY_PALETTE[0];
+}
 const PX_PER_MIN=1.25; /* the calendar is spatially honest: 1 hour ≈ 75px of height */
 const DEFAULT_TREATS=[
   {id:'t1',name:'Coffee out',points:250},{id:'t2',name:'Skein of yarn',points:400},
