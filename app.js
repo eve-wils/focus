@@ -71,9 +71,9 @@ const DEFAULT_LAYOUT_COLS=[
   ['taskBankCard'],
   ['weekPlanCard'],
   ['futureLogCard'],
-  ['waterCard','meditationCard','movementCard'],
-  ['bookshelfCard', 'papersCard'],
-  ['treatsCard','spendCard']
+  ['meditationCard','movementCard'],
+  ['bookshelfCard','treatsCard'],
+  ['waterCard','papersCard','spendCard']
 ];
 const CAL_TOOL='mcp__b11aad2b-1f8f-4672-9e75-3d83a6b8e73f__list_events';
 const ITEMS=[
@@ -290,6 +290,9 @@ function backfillLayout(){
      collapse toggle entirely, but a layout saved before then could still have collapsed:true
      stuck on it with no UI path left to undo that, so it's force-cleared here every load. */
   if(S.layout.collapsed['card-day']) delete S.layout.collapsed['card-day'];
+  /* the raw color-picker section in Settings defaults to collapsed (presets are the prominent
+     path); only seed this the first time so a user who's deliberately expanded it keeps that choice */
+  if(S.layout.collapsed.advancedColors===undefined) S.layout.collapsed.advancedColors=true;
 }
 function backfillTheme(){
   if(!S.theme) S.theme=Object.assign({},DEFAULT_THEME);
@@ -1647,24 +1650,24 @@ function unitCtlHTML(t,ctx){
   const inNow=!!at&&at===nowId;
   const onDay=isRecurring(t)?(dueOnDay(t,k)||!!at):(t.day===k);
   const el=taskElapsed(t), want=unitPrimary(ctx), open=editing==='more:'+id;
-  let h='';
+  let h='', actions='';
   /* state reads as text, not as more buttons competing for the eye */
   if(el>0||running) h+='<span class="tclock"'+(running?' data-timer-live-task="'+id+'"':'')+'>'+mmss(el)+'</span>';
   if(at&&ctx!=='block') h+='<span class="statechip">@ '+placementLabel(id)+'</span>';
   if(isRecurring(t)&&ctx!=='block') h+='<span class="statechip">'+schedLabel(t)+'</span>';
   if(sk) h+='<span class="statechip">skipped</span>';
   if(want.indexOf('timer')>=0)
-    h+='<button class="timerbtn'+(running?' on':'')+'" title="start / stop the timer" onclick="toggleTaskTimerBank(\''+id+'\',event)">'+(running?'\u275a\u275a':'\u25b6')+'</button>';
+    actions+='<button class="timerbtn'+(running?' on':'')+'" title="start / stop the timer" onclick="toggleTaskTimerBank(\''+id+'\',event)">'+(running?'\u275a\u275a':'\u25b6')+'</button>';
   if(want.indexOf('now')>=0&&nowId&&!inNow)
-    h+='<button class="arrowbtn wide" title="put it in the block happening right now" onclick="itemToNow(\''+id+'\',event)">now</button>';
+    actions+='<button class="arrowbtn wide" title="put it in the block happening right now" onclick="itemToNow(\''+id+'\',event)">now</button>';
   if(want.indexOf('day')>=0&&!onDay)
-    h+='<button class="arrowbtn wide" title="put it on the day you\u2019re viewing" onclick="itemToDay(\''+id+'\',event)">\u2192 '+vdayLabel().toLowerCase()+'</button>';
+    actions+='<button class="arrowbtn wide" title="put it on the day you\u2019re viewing" onclick="itemToDay(\''+id+'\',event)">\u2192 '+vdayLabel().toLowerCase()+'</button>';
   if(want.indexOf('skip')>=0&&isRecurring(t))
-    h+='<button class="arrowbtn wide'+(sk?' on':'')+'" title="skip just this day \u2014 your streak stays safe" onclick="skipItem(\''+id+'\',event)">'+(sk?'unskip':'skip')+'</button>';
-  h+='<button class="morebtn'+(open?' on':'')+'" title="more actions" onclick="event.stopPropagation();toggleEdit(\'more:'+id+'\')">\u22ef</button>';
-  h+=reorderArrowsHTML(t);
-  h+='<span class="drag" title="drag onto a block, a day, or the future log">\u283f</span>';
-  return h;
+    actions+='<button class="arrowbtn wide'+(sk?' on':'')+'" title="skip just this day \u2014 your streak stays safe" onclick="skipItem(\''+id+'\',event)">'+(sk?'unskip':'skip')+'</button>';
+  actions+='<button class="morebtn'+(open?' on':'')+'" title="more actions" onclick="event.stopPropagation();toggleEdit(\'more:'+id+'\')">\u22ef</button>';
+  actions+=reorderArrowsHTML(t);
+  actions+='<span class="drag" title="drag onto a block, a day, or the future log">\u283f</span>';
+  return h+'<span class="tr2-actions">'+actions+'</span>';
 }
 /* the drawer behind the "more" button — labelled words, not a wall of glyphs */
 function unitMoreHTML(t,ctx){
@@ -3289,17 +3292,21 @@ function renderBlockDetailPanel(){
     '</div>'+
     '<div class="bdfocus" contenteditable="true" data-ph="focus…" onblur="setFocus(\''+b.id+'\',this.textContent)">'+String(b.focus||'').replace(/</g,'&lt;')+'</div>';
   if(isCurrentBlock(b)) h+='<div class="nowline">'+hhmm(new Date())+' now · '+pct+'% through this block</div>';
-  h+='<div class="bdtasks">';
-  /* whatever's still open floats to the top; done and skipped rows stay put but settle
-     underneath, so a half-finished routine reads at a glance. Project blocks additionally pull
-     in whatever's next up from the task bank in their category — completing/skipping the top one
-     just naturally promotes the next, no separate "current task" pointer to maintain. */
-  sortSettledLast(quests.concat(btasks)).forEach(function(t){ h+=taskRowHTML(t,'block'); });
-  ptasks.forEach(function(t){ h+=taskRowHTML(t,'block'); });
-  h+='</div>';
-  h+='<div class="addtiny"><input id="tinyIn-'+b.id+'" placeholder="'+(b.routine?'add a habit to this routine, press enter…':'add a task to this block, press enter…')+'" maxlength="80" onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddBlockTask(\''+b.id+'\')}">'+
-     '<button class="btn tiny soft" onclick="quickAddBlockTask(\''+b.id+'\')">+</button></div>'+
-     '<textarea class="bnotes" placeholder="notes…" onchange="setNotes(\''+b.id+'\',this.value)">'+(b.notes||'')+'</textarea>';
+  /* a single-focus block (a meeting, a lecture) has nothing to check off — mirrors the same
+     gate applied in focus mode (renderFocusSession) so tasks never silently vanish on lock-in */
+  if(b.type!=='single'){
+    h+='<div class="bdtasks">';
+    /* whatever's still open floats to the top; done and skipped rows stay put but settle
+       underneath, so a half-finished routine reads at a glance. Project blocks additionally pull
+       in whatever's next up from the task bank in their category — completing/skipping the top one
+       just naturally promotes the next, no separate "current task" pointer to maintain. */
+    sortSettledLast(quests.concat(btasks)).forEach(function(t){ h+=taskRowHTML(t,'block'); });
+    ptasks.forEach(function(t){ h+=taskRowHTML(t,'block'); });
+    h+='</div>';
+    h+='<div class="addtiny"><input id="tinyIn-'+b.id+'" placeholder="'+(b.routine?'add a habit to this routine, press enter…':'add a task to this block, press enter…')+'" maxlength="80" onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddBlockTask(\''+b.id+'\')}">'+
+       '<button class="btn tiny soft" onclick="quickAddBlockTask(\''+b.id+'\')">+</button></div>';
+  }
+  h+='<textarea class="bnotes" placeholder="notes…" onchange="setNotes(\''+b.id+'\',this.value)">'+(b.notes||'')+'</textarea>';
   panel.innerHTML=h;
 }
 /* ===================== lock-in focus mode =====================
@@ -3444,6 +3451,7 @@ function renderTimeline(){
   const axisStartHour=Math.ceil(liveOrigin/60)*60;
   for(let m=axisStartHour;m<=DAY_END;m+=60){ axis+='<span class="gh" style="top:'+minToPx(m,liveOrigin)+'px">'+fromMin(m)+'</span>'; body+='<div class="gridline" style="top:'+minToPx(m,liveOrigin)+'px"></div>'; }
   liveBlocks.forEach(function(b){ body+=blockGridBoxHTML(b,openId,liveOrigin); });
+  if(!liveBlocks.length) body+='<div class="qempty gridempty">nothing on the calendar yet — drag to add a block</div>';
   /* the now line: a real absolute line across the fixed grid, at the actual live-time offset —
      the grid has a real fixed pixel height, so this position is reliable instead of resolving
      against an auto-height container. */
@@ -4086,9 +4094,22 @@ function dayStats(k){
   const quests=dd.qdone?Object.keys(dd.qdone).length:0;
   return {habitPct:req.length?doneN/req.length:0, pages:dd.pagesLogged||0, exMin:exMin, waterHit:dd.water>=WATER_GOAL, quests:quests, hasData:true};
 }
+let monthCursor=null;
+function curMonthCursor(){ if(!monthCursor){ const n=new Date(); monthCursor={y:n.getFullYear(),m:n.getMonth()}; } return monthCursor; }
+function shiftMonth(delta){
+  const c=curMonthCursor(); let y=c.y, m=c.m+delta;
+  if(m<0){ m=11; y--; } else if(m>11){ m=0; y++; }
+  const now=new Date();
+  if(y>now.getFullYear()||(y===now.getFullYear()&&m>now.getMonth())){ y=now.getFullYear(); m=now.getMonth(); }
+  monthCursor={y:y,m:m}; renderMonth();
+}
 function renderMonth(){
-  const now=new Date(); const y=now.getFullYear(), m=now.getMonth();
-  document.getElementById('monthLbl').textContent=now.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  const cur=curMonthCursor(); const y=cur.y, m=cur.m;
+  const now=new Date();
+  document.getElementById('monthLbl').textContent=new Date(y,m,1).toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  const atCurrentMonth=(y===now.getFullYear()&&m===now.getMonth());
+  const nextBtn=document.getElementById('monthNextBtn');
+  if(nextBtn) nextBtn.disabled=atCurrentMonth;
   const nDays=daysInMonth(y,m);
   let fullDays=0, pageSum=0, pageDays=0, exSum=0, waterHitDays=0, questSum=0, elapsedDays=0;
   const cats={}; QCATS.forEach(function(c){cats[c]=0;});
@@ -4117,7 +4138,8 @@ function renderMonth(){
     if(dt>now){ hh+='<div class="hcell" style="background:transparent;border-style:dashed"></div>'; continue; }
     const st=dayStats(k);
     const alpha=st.hasData?Math.max(0.08,st.habitPct):0.05;
-    hh+='<div class="hcell" style="background:rgba(122,156,125,'+alpha.toFixed(2)+')" title="'+k+' · '+Math.round(st.habitPct*100)+'%"></div>';
+    hh+='<div class="hcell" style="background:rgba(122,156,125,'+alpha.toFixed(2)+')" title="'+k+' · '+Math.round(st.habitPct*100)+'%">'+
+      (st.hasData?'<span class="hcelldot"></span>':'')+'</div>';
   }
   document.getElementById('heatmap').innerHTML=hh;
   let maxWk=1; const weeks=[];
