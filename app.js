@@ -3093,7 +3093,7 @@ function addSpendForDay(dayKey){
 function downloadSnapshot(silent){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='lock-in-backup-'+today()+'.json'; a.click();
+  a.download='prism-backup-'+today()+'.json'; a.click();
   S.lastBackup=today(); save();
   if(!silent) toast('Backup downloaded'); render();
 }
@@ -3105,7 +3105,7 @@ function onImportFile(ev){
     try{
       const obj=JSON.parse(r.result);
       if(obj&&obj.v===4) adoptState(obj);
-      else toast('That file doesn\u2019t look like a Lock In backup');
+      else toast('That file doesn\u2019t look like a Prism backup');
     }catch(e){ toast('Could not read that file'); }
   };
   r.readAsText(f);
@@ -3129,7 +3129,7 @@ function restoreFromPaste(){
   if(!txt){ toast('Paste your backup JSON first'); return; }
   let obj=null;
   try{ obj=JSON.parse(txt); }catch(e){ toast('That isn\u2019t valid JSON \u2014 copy the whole file'); return; }
-  if(!obj||obj.v!==4){ toast('That doesn\u2019t look like a Lock In backup'); return; }
+  if(!obj||obj.v!==4){ toast('That doesn\u2019t look like a Prism backup'); return; }
   adoptState(obj);
 }
 function exportData(){ downloadSnapshot(false); }
