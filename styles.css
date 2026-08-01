@@ -920,3 +920,18 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
   .hero,.viewtabs{display:none}
   #prismShell{display:block}
 }
+
+/* month calendar: one score ring per date (see dayScore), replacing the old habit-only heatmap */
+.scoregrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.scell{position:relative;height:42px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.scell>svg{width:34px;height:34px;transform:rotate(-90deg)}
+.scell .n{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--ink-2)}
+.scell.today .n{color:var(--mint-deep);font-weight:600}
+.scell.future .n{color:var(--ink-3)}
+.scorelegend{display:flex;gap:12px;margin-top:11px;font-size:9px;letter-spacing:1.2px;color:var(--ink-3)}
+
+/* nested subtasks: each level indents by its own padding, so depth reads without a tree guide */
+.subtasks .subtasks{margin-left:14px;border-left:1px solid var(--rule);padding-left:8px}
+.nestcount{font-size:9px;letter-spacing:1px;color:var(--ink-3);border:1px solid var(--stroke);
+  padding:1px 5px;flex:none}

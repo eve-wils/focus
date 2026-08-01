@@ -1588,7 +1588,7 @@ function unitMoreHTML(t,ctx){
       ph+='<select class="moreact" onclick="event.stopPropagation()" onchange="setTaskProject(\''+id+'\',this.value)">'+categoryOptionsHTML(t.project)+'</select>';
     ph+='<button class="moreact danger'+(isArm?' on':'')+'" onclick="delUnit(\''+id+'\',event)">'+(isArm?'tap again to delete':'✕ delete')+'</button>';
     ph+='</div>';
-    if(isTask&&!t.parentId) ph+=subtaskRowsHTML(t);
+    if(isTask) ph+=subtaskRowsHTML(t);
     return ph;
   }
   let h='<div class="moreacts" onclick="event.stopPropagation()">';
@@ -1616,7 +1616,7 @@ function unitMoreHTML(t,ctx){
   }
   h+='<button class="moreact danger'+(isArm?' on':'')+'" onclick="delUnit(\''+id+'\',event)">'+(isArm?'tap again to delete':'\u2715 delete')+'</button>';
   h+='</div>';
-  if(isTask&&!t.parentId) h+=subtaskRowsHTML(t);
+  if(isTask) h+=subtaskRowsHTML(t);
   return h;
 }
 function unitControlsHTML(t,ctx){ return '<span class="unitctl">'+unitCtlHTML(t,ctx)+'</span>'; }
@@ -1887,16 +1887,29 @@ function quickAddSubtask(parentId){
   const el=document.getElementById('subIn-'+parentId); if(!el) return;
   if(addSubtask(parentId,el.value)){ el.value=''; render(); }
 }
-function subtaskRowsHTML(t){
+/* Renders a task's children, and *their* children, to any depth. The model always supported this
+   — makeUnit() has created parentId/subtaskIds since the unified-item migration — but the render
+   was capped at one level by a `!t.parentId` guard at both call sites, so a sub-subtask existed in
+   state and was simply never drawn.
+   MAX_NEST is a cycle guard, not a product limit: subtaskIds is hand-editable state and a task
+   that ends up its own ancestor would otherwise recurse until the stack gives out. */
+const MAX_NEST=8;
+function subtaskRowsHTML(t,depth){
+  depth=depth||0;
+  if(depth>=MAX_NEST) return '';
   const subs=subtasksOf(t);
   let h='<div class="subtasks" onclick="event.stopPropagation()">';
   subs.forEach(function(s){
     const dn=itemDone(s);
+    const kids=subtasksOf(s).length;
     h+='<div class="subrow'+(dn?' done':'')+'">'+
        '<input type="checkbox"'+(dn?' checked':'')+' onchange="toggleUnit(\''+s.id+'\')">'+
        '<span class="tt" contenteditable="true" onblur="setTaskText(\''+s.id+'\',this.textContent)">'+String(s.text).replace(/</g,'&lt;')+'</span>'+
+       (kids?'<span class="nestcount" title="'+kids+' subtask'+(kids===1?'':'s')+'">'+kids+'</span>':'')+
        '<button class="rowbtn" style="opacity:.5" onclick="unlinkSubtask(\''+s.id+'\',event)" title="remove subtask">✕</button>'+
        '</div>';
+    /* each child gets the same treatment, indented one step by .subtasks' own left padding */
+    h+=subtaskRowsHTML(s,depth+1);
   });
   h+='<div class="addtiny"><input id="subIn-'+t.id+'" placeholder="add a subtask, press enter…" maxlength="80" onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddSubtask(\''+t.id+'\')}">'+
      '<button class="btn tiny soft" onclick="quickAddSubtask(\''+t.id+'\')">+</button></div>';
@@ -4301,17 +4314,24 @@ function renderMonth(){
     '<div class="metric"><div class="mv">'+(pageDays?Math.round(pageSum/pageDays):0)+'</div><div class="ml">avg pages, active days</div></div>'+
     '<div class="metric"><div class="mv">'+Math.round(exSum/60*10)/10+'h</div><div class="ml">exercise this month</div></div>'+
     '<div class="metric"><div class="mv">'+waterHitDays+' / '+elapsedDays+'</div><div class="ml">water goal hit</div></div>';
+  /* one ring per date, driven by dayScore — the same number the header bar and the phone's
+     day-of-week strip show, so a date reads identically wherever you meet it. Future dates draw
+     an empty track rather than a partial score. */
   const firstDow=new Date(y,m,1).getDay();
   let hh=''; for(let i=0;i<firstDow;i++) hh+='<div></div>';
+  const tk=today();
   for(let dnum=1;dnum<=nDays;dnum++){
     const dt=new Date(y,m,dnum);
     const k=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-    if(dt>now){ hh+='<div class="hcell" style="background:transparent;border-style:dashed"></div>'; continue; }
-    const st=dayStats(k);
-    const alpha=st.hasData?Math.max(0.08,st.habitPct):0.05;
-    hh+='<div class="hcell" style="background:rgba(122,156,125,'+alpha.toFixed(2)+')" title="'+k+' · '+Math.round(st.habitPct*100)+'%"></div>';
+    const future=k>tk, isToday=k===tk;
+    const sc=future?0:dayScore(k);
+    const col=future?'var(--glass-strong)':scoreColor(sc);
+    hh+='<div class="scell'+(isToday?' today':'')+(future?' future':'')+'" onclick="openDay(\''+k+'\')" '+
+      'title="'+k+' · '+Math.round(sc*100)+'%">'+ringSvg(sc,col,44,10)+
+      '<span class="n">'+dnum+'</span></div>';
   }
-  document.getElementById('heatmap').innerHTML=hh;
+  const sg=document.getElementById('scoreGrid');
+  if(sg) sg.innerHTML=hh;
   let maxWk=1; const weeks=[];
   for(let w=5;w>=0;w--){
     let sum=0;
