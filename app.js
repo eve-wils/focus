@@ -495,14 +495,20 @@ function categoryOptionsHTML(selected){
     return '<option value="'+String(c).replace(/"/g,'&quot;')+'"'+(c===selected?' selected':'')+'>'+c+'</option>';
   }).join('');
 }
-/* Which stored versions we can still open. v4 is upgraded in place by the backfill chain — every
-   v:5 change is additive, so there is nothing to convert here beyond stamping the new number.
-   This guard matters more than it looks: the old code was `S.v!==4 -> blankState()`, so bumping
-   the version without widening it would have silently thrown away real saved data. */
-function acceptVersion(){
-  if(!S) return false;
-  if(S.v===5) return true;
-  if(S.v===4){ S.v=5; return true; }
+/* Which stored versions we can still open, for ANY state object — local storage, the GitHub
+   pull, a backup file, a pasted blob, the pre-merge snapshot. v4 is upgraded in place by the
+   backfill chain; every v:5 change is additive, so there is nothing to convert beyond stamping
+   the new number.
+   This has to be one function used by every reader. The v:4 -> v:5 bump originally widened only
+   the localStorage guard in load() and left four identical `obj.v!==4` checks behind, the worst
+   of which was in ghPull(): once a device had pushed v:5, every later pull rejected its own data
+   as "not a backup", which reads as sync being broken and, on a device with no local state, as
+   the app coming up empty. */
+function acceptVersion(obj){
+  const o=(obj===undefined)?S:obj;
+  if(!o) return false;
+  if(o.v===5) return true;
+  if(o.v===4){ o.v=5; return true; }
   return false;
 }
 function backfillTasks(){
@@ -722,7 +728,7 @@ async function ghPull(){
     const raw=await ghFetchFile();
     if(!raw) return null;
     const obj=JSON.parse(raw);
-    if(!obj||obj.v!==4) return null;
+    if(!acceptVersion(obj)) return null;
     ghLastError=null;
     return obj;
   }catch(e){ ghLastError=String(e&&e.message||e); return null; }
@@ -955,7 +961,7 @@ async function restorePreUnify(){
   try{
     const r=await window.storage.get(KEY+'_pre_unify',false);
     const obj=r&&r.value?JSON.parse(r.value):null;
-    if(!obj||obj.v!==4){ toast('No pre-merge snapshot saved'); return; }
+    if(!acceptVersion(obj)){ toast('No pre-merge snapshot saved'); return; }
     delete obj.unifiedAt;
     adoptState(obj);
     toast('Rolled back to the pre-merge snapshot');
@@ -3068,7 +3074,7 @@ function onImportFile(ev){
   r.onload=function(){
     try{
       const obj=JSON.parse(r.result);
-      if(obj&&obj.v===4) adoptState(obj);
+      if(acceptVersion(obj)) adoptState(obj);
       else toast('That file doesn\u2019t look like an Aura Farm backup');
     }catch(e){ toast('Could not read that file'); }
   };
@@ -3093,7 +3099,7 @@ function restoreFromPaste(){
   if(!txt){ toast('Paste your backup JSON first'); return; }
   let obj=null;
   try{ obj=JSON.parse(txt); }catch(e){ toast('That isn\u2019t valid JSON \u2014 copy the whole file'); return; }
-  if(!obj||obj.v!==4){ toast('That doesn\u2019t look like an Aura Farm backup'); return; }
+  if(!acceptVersion(obj)){ toast('That doesn\u2019t look like an Aura Farm backup'); return; }
   adoptState(obj);
 }
 function exportData(){ downloadSnapshot(false); }
