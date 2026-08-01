@@ -51,15 +51,15 @@ const CAT_COLORS={home:'#9b7fd4', work:'#7dfaa0', meeting:'#e8a33d', reading:'#4
    existing users' columns. */
 const CARD_COL_IDS=['todayColA','todayColB','todayColC', 'weekColA', 'weekColB', 'weekColC', 'moreColA','moreColB','moreColC'];
 const DEFAULT_LAYOUT_COLS=[
-  ['habitStreakCard'],
   ['card-day'],
   ['todayTasksCard','questCard'],
+  [],
   ['taskBankCard'],
   ['weekPlanCard'],
   ['futureLogCard'],
-  ['waterCard','meditationCard','movementCard'],
-  ['bookshelfCard', 'papersCard'],
-  ['spendCard']
+  ['habitStreakCard','waterCard','meditationCard'],
+  ['bookshelfCard','movementCard'],
+  ['papersCard','spendCard']
 ];
 const CAL_TOOL='mcp__b11aad2b-1f8f-4672-9e75-3d83a6b8e73f__list_events';
 const ITEMS=[
@@ -308,6 +308,24 @@ function backfillLayout(){
      collapse toggle entirely, but a layout saved before then could still have collapsed:true
      stuck on it with no UI path left to undo that, so it's force-cleared here every load. */
   if(S.layout.collapsed['card-day']) delete S.layout.collapsed['card-day'];
+  relocateHabitCard();
+}
+/* v:5 — SCAN leads with the day now, not the habit grid. On the phone the columns stack, so
+   whatever sits in the first today-column is what you land on, and the mock puts the habit grid
+   under BIO. A saved layout keeps its own card order, so this move has to be applied once
+   explicitly rather than left to DEFAULT_LAYOUT_COLS. */
+function relocateHabitCard(){
+  if(S.habitCardMovedAt) return;
+  const TODAY_COLS=[0,1,2], BIO_COL=6;
+  TODAY_COLS.forEach(function(ci){
+    const col=S.layout.cols[ci]; if(!col) return;
+    const at=col.indexOf('habitStreakCard');
+    if(at>=0){
+      col.splice(at,1);
+      if(S.layout.cols[BIO_COL].indexOf('habitStreakCard')<0) S.layout.cols[BIO_COL].unshift('habitStreakCard');
+    }
+  });
+  S.habitCardMovedAt=Date.now();
 }
 /* v:5 — the redesign replaced the palette outright, so a theme saved under the old system is
    dropped rather than merged: half-migrating it would leave light-mode pinks on a black page.
@@ -3325,6 +3343,49 @@ function renderSheets(){
       '<div class="pslist">'+list+'</div>';
   }
 }
+/* The SCAN tab's priority directive: whatever block is happening right now, with a countdown
+   ring, its task list and the lock-in button. It is a *view* of the current block, not a second
+   place to store one — the tasks are blockTasksFor(), the toggle is toggleUnit(), ENGAGE is the
+   existing lockIn(). Renders nothing when no block is running, or when you are looking at another
+   day, since "now" only means something on today. */
+function renderPrismFocus(){
+  const host=document.getElementById('prismFocus');
+  if(!host) return;
+  if(!isViewingToday()||viewMode!=='today'){ host.innerHTML=''; return; }
+  const d=day(vday());
+  const b=(d.blocks||[]).filter(function(x){return isCurrentBlock(x);})[0];
+  if(!b){ host.innerHTML=''; return; }
+  const st=toMin(b.start), dur=blockDur(b), nm=nowMinutes()%1440;
+  const leftMin=Math.max(0,st+dur-nm);
+  const pct=dur?Math.min(1,(nm-st)/dur):0;
+  const tasks=blockTasksFor(b,vday());
+  const done=tasks.filter(function(t){return itemDone(t,vday());}).length;
+  const locked=focusBlockId===b.id;
+  host.innerHTML=
+    '<div class="pfcard">'+
+      '<div class="pfhead"><span class="pfk">PRIORITY DIRECTIVE</span>'+
+        '<span class="pfst">'+(locked?'ENGAGED':'ON SCHEDULE')+'</span></div>'+
+      '<div class="pfbody">'+
+        '<div class="pfring">'+ringSvg(pct,'var(--mint-deep)',42,8)+
+          '<span class="pfmin"><b>'+leftMin+'</b><i>MIN</i></span></div>'+
+        '<div class="pfmeta">'+
+          '<div class="pft">'+b.start+' '+String(b.focus||b.calTitle||'open block').replace(/</g,'&lt;')+'</div>'+
+          '<div class="pfsub">'+done+'/'+tasks.length+' SUBROUTINES</div>'+
+        '</div>'+
+      '</div>'+
+      (tasks.length?'<div class="pftasks">'+tasks.map(function(t){
+        const dn=itemDone(t,vday());
+        return '<button class="pftask'+(dn?' done':'')+'" onclick="toggleUnit(\''+t.id+'\')">'+
+          '<span class="bx">'+(dn?'✓':'')+'</span>'+
+          '<span class="tx">'+String(t.text).replace(/</g,'&lt;')+'</span></button>';
+      }).join('')+'</div>':'')+
+      '<div class="pfbtns">'+
+        '<button class="pfgo" onclick="'+(locked?'exitFocus()':'lockIn(\''+b.id+'\')')+'">'+
+          (locked?'❚❚ HOLD':'▶ ENGAGE')+'</button>'+
+        '<button class="pfalt" onclick="toggleBlock(\''+b.id+'\')">OPEN</button>'+
+      '</div>'+
+    '</div>';
+}
 /* ===================== render ===================== */
 function ritualFullyDone(r){
   const items=itemsFor(r).concat(ritualQuests(r));
@@ -3946,6 +4007,7 @@ function render(){
   document.getElementById('dayPct').textContent=overall+'%';
   document.getElementById('dayFill').style.width=overall+'%';
   renderPrismShell();
+  renderPrismFocus();
   renderFocusSession();
   /* water lives in the app header now (waterHeader/waterFillHeader/cupCaptionHeader), so it has
      to render on every view, not just today — this block runs before the view branches below,
