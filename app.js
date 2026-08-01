@@ -1,5 +1,7 @@
 /* ===================== config ===================== */
-const ROLLOVER=4, WATER_GOAL=100, FREEZE_AT=120, MAX_FREEZE=3;
+const ROLLOVER=4, FREEZE_AT=120, MAX_FREEZE=3;
+/* the daily water goal is S.waterGoal (editable) — read it through waterGoal() for "the goal
+   now" or goalOn(dayKey) for "the goal that applied on that day". It was a const until v:5. */
 const DAY_START=360, DAY_END=1320; /* 6:00am – 10:00pm skeleton */
 /* ---------- fixed proportional grid (Google-Calendar-style timeline) ----------
    Replaces the earlier elastic/floor-ceiling sizing: every block's on-screen height is now a
@@ -56,7 +58,7 @@ const PRESET_THEMES=[
    more view (cols 3-5: moreColA/B/C) — ids match each card's actual DOM id. Water lives in the
    header now (see waterHeader). Today keeps habit streaks, the calendar, the inbox (tasks
    assigned to today from the planning tab), and side quests; everything else (meditation,
-   bookshelf, movement, intentions, papers, treats, spending) lives in the more tab. Any id
+   bookshelf, movement, intentions, papers, spending) lives in the more tab. Any id
    dropped from this list is also dropped from a saved layout by backfillLayout, which is how
    the retired sunrise/moonlight panels (and card moves like this one) clear themselves out of
    existing users' columns. */
@@ -70,7 +72,7 @@ const DEFAULT_LAYOUT_COLS=[
   ['futureLogCard'],
   ['waterCard','meditationCard','movementCard'],
   ['bookshelfCard', 'papersCard'],
-  ['treatsCard','spendCard']
+  ['spendCard']
 ];
 const CAL_TOOL='mcp__b11aad2b-1f8f-4672-9e75-3d83a6b8e73f__list_events';
 const ITEMS=[
@@ -98,15 +100,11 @@ const DEFAULT_QUESTS=[
   {id:'laundry',name:'Laundry',        cat:'home'},
   {id:'outfit', name:'Pick tomorrow’s outfit', cat:'admin'},
 ];
-/* points expressed directly in cents, real-money value. Rebalanced so a fully-completed day of
-   rituals + quests + water alone (no bonus tasks) lands well under the cost of the cheapest treat
-   ($2.50 coffee) — it should take roughly 3 solid days to earn a coffee out, with task/block/pomo
-   completions as the main path to bigger treats. */
-const CENTS={med:3, core:5, quest:8, custom:8, waterGoal:21, seal:17, pomo:3, blockClear:8, move:8, pages:5};
-/* cumulative reward for reaching each paper status, indexed to PAPER_STATUSES below */
-const PAPER_STATUS_CENTS=[0, 15, 50, 110];
-/* weekly earning guardrails: $20/wk should be easy with consistent habits, $100/wk is a hard ceiling */
-const WEEKLY_TARGET_CENTS=2000, WEEKLY_CAP_CENTS=10000;
+/* The points/cents economy that used to live here (CENTS payout table, weekly earn cap, paper
+   status payouts, treats, the pay-as-you-go ledger) was removed in v:5. Completing something now
+   simply completes it — there is no currency to keep in sync, and therefore no way for an edit,
+   a delete or an un-complete to leave the balance wrong. Historical `cents`/`ptsEarned` values
+   are left untouched in stored state; nothing reads them. */
 const STUDIO_CHECKLIST=['yoga mat','music','hairtie'];
 const OUTDOOR_CHECKLIST=['get dressed','put on shoes','fill water','grab headphones'];
 const ACTS=[
@@ -130,9 +128,8 @@ const BLOCK_PALETTE=[
 function blockHash(id){ let h=0; for(let i=0;i<String(id).length;i++){ h=(h*31+String(id).charCodeAt(i))>>>0; } return h; }
 function blockColor(b){ return BLOCK_PALETTE[blockHash(b.id)%BLOCK_PALETTE.length]; }
 const PX_PER_MIN=1.25; /* the calendar is spatially honest: 1 hour ≈ 75px of height */
-const DEFAULT_TREATS=[
-  {id:'t1',name:'Coffee out',points:250},{id:'t2',name:'Skein of yarn',points:400},
-  {id:'t3',name:'A new book',points:900},{id:'t4',name:'Dinner out',points:2000}];
+/* real-money spending categories for the budget tracker (S.txnCats) — user-extendable at runtime */
+const DEFAULT_TXN_CATS=['Groceries','Dining','Transport','Supplies','Other'];
 const DEFAULT_AFFIRM=[
   'When mindfulness embraces those we love, they will bloom like flowers. — Thich Nhat Hanh',
   'If our love is only a will to possess, it is not love. — Thich Nhat Hanh',
@@ -144,11 +141,10 @@ const DEFAULT_AFFIRM=[
   'Accept the things to which fate binds you, and love the people with whom fate brings you together, but do so with all your heart. — Marcus Aurelius, Meditations'];
 /* ===================== state ===================== */
 const KEY='aura_v4'; const OLD_KEY='aura_v3'; let S=null;
-function blankState(){ return { v:4, lastDate:null, days:{},
+function blankState(){ return { v:5, lastDate:null, days:{},
   custom:[], removed:[], moves:{},
   vessels:[{name:'Everyday cup',oz:20},{name:'Big bottle',oz:32},{name:'Mug',oz:12}], vesselIdx:0,
-  cents:0, waterStreak:0, waterBest:0, freezes:0, frozenDays:[],
-  treats:DEFAULT_TREATS.map(function(t){return Object.assign({},t);}), redeemed:[],
+  waterStreak:0, waterBest:0, freezes:0, frozenDays:[], waterGoal:100,
   books:[], doneBooks:[],
   affirm:DEFAULT_AFFIRM.slice(), affirmIdx:{},
   tea:{}, moveGoal:150, readGoal:150,
@@ -156,7 +152,7 @@ function blankState(){ return { v:4, lastDate:null, days:{},
   workStart:'12:00', workHours:8, lastBackup:null,
   tasks:[], notionImportedAt:null, notionLinksRepairedAt:null, blockTasksMigratedAt:null,
   mediBestSec:0, papers:[],
-  spendLog:[], pointsRebalancedAt:Date.now(),
+  budget:{monthlyCents:0, startsOn:1}, txns:[], txnCats:DEFAULT_TXN_CATS.slice(),
   categories:DEFAULT_CATEGORIES.slice(),
   layout:{cols:DEFAULT_LAYOUT_COLS.map(function(c){return c.slice();}), collapsed:{}},
   theme:Object.assign({},DEFAULT_THEME),
@@ -169,16 +165,13 @@ function migrateFromV3(old){
    'books','doneBooks','affirm','affirmIdx','tea','moveGoal','quests','workStart','workHours','lastDate'].forEach(function(k){
     if(old[k]!==undefined) s[k]=old[k];
   });
-  s.cents=Math.round((old.pts||0)*2.5);
-  s.treats=(old.treats||[]).map(function(t){return {id:t.id,name:t.name,points:Math.round((t.cost||0)*2.5)||10};});
-  s.redeemed=old.redeemed||[];
   s.days={};
   Object.keys(old.days||{}).forEach(function(k){
     const od=old.days[k];
     s.days[k]={
       water:od.water||0, log:od.log||[], done:od.done||{}, ex:od.ex||{},
       pagesLogged:od.pagesLogged||0, pagesBy:od.pagesBy||{}, pomos:od.pomos||0,
-      qdone:{}, questAssign:{}, ptsEarned:0,
+      qdone:{}, questAssign:{}, goal:100, meals:[],
       blocks:(od.blocks||[]).map(function(b){
         return {id:b.id,start:b.start,end:b.end||fromMin(toMin(b.start)+60),focus:b.focus||'',
           tasks:(b.tasks||[]).map(function(t){return {t:t.t,done:!!t.done,elapsed:0,timerStart:null};}),
@@ -193,22 +186,68 @@ function migrateFromV3(old){
   });
   return s;
 }
-function backfillTreats(){
-  if(!S.treats) { S.treats=[]; return; }
-  S.treats=S.treats.map(function(t){
-    if(t.points!==undefined) return t;
-    if(t.dollars!==undefined) return {id:t.id,name:t.name,points:Math.round(t.dollars*100)};
-    return {id:t.id,name:t.name,points:100};
-  });
-}
 function backfillAffirm(){
   if(!S.affirm||!S.affirm.length||!S.affirm.some(function(x){return x.indexOf(' — ')>=0;})){
     S.affirm=DEFAULT_AFFIRM.slice(); S.affirmIdx={};
   }
 }
-function backfillSpendLog(){
-  if(!S.spendLog) { S.spendLog=[]; return; }
-  S.spendLog.forEach(function(s){ if(!s.day) s.day=dayKeyOf(new Date(s.at||Date.now())); });
+/* v:5 — the old spendLog was real purchases charged against the points balance. The points half
+   is gone; the purchases are not, and they already have the shape the budget tracker wants, so
+   they become the seed for S.txns rather than being thrown away. `balanceAfter` is dropped (it
+   referred to a balance that no longer exists) and `amount` is renamed to `amountCents` to say
+   plainly what it holds. Runs once — after it, S.spendLog is left in place but unread. */
+function backfillTxns(){
+  if(!S.txns) S.txns=[];
+  if(!S.txnCats||!S.txnCats.length) S.txnCats=DEFAULT_TXN_CATS.slice();
+  if(!S.budget) S.budget={monthlyCents:0, startsOn:1};
+  if(S.budget.monthlyCents===undefined) S.budget.monthlyCents=0;
+  if(S.budget.startsOn===undefined) S.budget.startsOn=1;
+  if(S.txnsMigratedAt) return;
+  (S.spendLog||[]).forEach(function(s){
+    S.txns.push({id:s.id||('tx'+Date.now()+Math.random().toString(36).slice(2,7)),
+      name:s.name||'', amountCents:s.amount||0, cat:'Uncategorized',
+      day:s.day||dayKeyOf(new Date(s.at||Date.now())), at:s.at||Date.now()});
+  });
+  S.txns.sort(function(a,b){ return (b.at||0)-(a.at||0); });
+  if(S.txns.some(function(t){return t.cat==='Uncategorized';})&&S.txnCats.indexOf('Uncategorized')<0){
+    S.txnCats.push('Uncategorized');
+  }
+  S.txnsMigratedAt=Date.now();
+}
+/* v:5 — the water goal was a module const, so changing it would silently re-judge every past day's
+   streak. The goal in effect is now snapshotted onto each day record when the day is created;
+   dayCounts() reads that, never the live setting. Existing days are stamped with 100, the value
+   that was actually in force while they were being logged. */
+function backfillWaterGoal(){
+  if(!S.waterGoal) S.waterGoal=100;
+  Object.keys(S.days).forEach(function(k){
+    const d=S.days[k];
+    if(d.goal===undefined) d.goal=100;
+  });
+}
+/* v:5 — meals are the one tracker with nothing to migrate from; day-keyed for consistency with
+   water, so a meal belongs to the day it was eaten rather than to a global list. */
+function backfillMeals(){
+  Object.keys(S.days).forEach(function(k){
+    const d=S.days[k];
+    if(!d.meals) d.meals=[];
+  });
+}
+/* v:5 — the chronological personal log from the mock's notes sheet. Distinct from S.weekNotes,
+   which is block-scoped prose attached to a specific block on a specific day. */
+function backfillLogEntries(){
+  if(!S.logEntries) S.logEntries=[];
+}
+/* v:5 — rail pinning. `atMin` places a task at an exact clock minute outside any block; `metric`
+   is the display unit for a count-mode task ("pages", "plates"). Everything else the task tree
+   needs — parentId, subtaskIds, order, day, blockId, mode, targetN, doneN — makeUnit() has
+   created since the unified-item migration, so there is nothing else to add here. */
+function backfillPinning(){
+  (S.tasks||[]).forEach(function(t){
+    if(t.atMin===undefined) t.atMin=null;
+    if(t.pinned===undefined) t.pinned=false;
+    if(t.metric===undefined) t.metric='';
+  });
 }
 function backfillCategories(){ if(!S.categories||!S.categories.length) S.categories=DEFAULT_CATEGORIES.slice(); }
 /* the two fixed ritual blocks used to be a hardcoded const (ROUTINE_DEFS/RITUALS) — now they're
@@ -513,19 +552,15 @@ function categoryOptionsHTML(selected){
     return '<option value="'+String(c).replace(/"/g,'&quot;')+'"'+(c===selected?' selected':'')+'>'+c+'</option>';
   }).join('');
 }
-/* one-time fix: the CENTS payout table was cut to roughly a third of its old values so that a
-   full ritual-only day stays under the cheapest treat. A balance earned under the old table would
-   otherwise look inflated under the new one, so rescale existing balances (and each day's
-   ptsEarned, which the weekly cap reads) by the same factor, once. */
-function rebalancePointsScale(){
-  if(S.pointsRebalancedAt) return;
-  const factor=1/3;
-  S.cents=Math.round(S.cents*factor);
-  Object.keys(S.days).forEach(function(k){
-    const d=S.days[k];
-    if(d.ptsEarned) d.ptsEarned=Math.round(d.ptsEarned*factor);
-  });
-  S.pointsRebalancedAt=Date.now();
+/* Which stored versions we can still open. v4 is upgraded in place by the backfill chain — every
+   v:5 change is additive, so there is nothing to convert here beyond stamping the new number.
+   This guard matters more than it looks: the old code was `S.v!==4 -> blankState()`, so bumping
+   the version without widening it would have silently thrown away real saved data. */
+function acceptVersion(){
+  if(!S) return false;
+  if(S.v===5) return true;
+  if(S.v===4){ S.v=5; return true; }
+  return false;
 }
 function backfillTasks(){
   if(!S.tasks) S.tasks=[];
@@ -824,7 +859,7 @@ function makeUnit(o){
     parentId:null, subtaskIds:[],
     source:'manual', notionUrl:null, createdAt:Date.now(), elapsed:0, timerStart:null,
     sched:{type:'none'},
-    mode:'simple', targetN:0, targetSec:0, doneN:0, timedN:0, paidCents:0}, o);
+    mode:'simple', targetN:0, targetSec:0, doneN:0, timedN:0}, o);
 }
 /* one-time fold of the three old entity lists into S.tasks. Ids are carried across verbatim so
    every historical S.days[<date>].done / .qdone entry still points at a real item, and the habit
@@ -872,12 +907,13 @@ function migrateToUnifiedItems(){
    own this inline, which meant restoring a backup skipped all of it — so a pre-merge backup came
    back with no habits at all, because nothing ran the merge or the heal on it. */
 function hydrateState(){
-  backfillTreats(); backfillAffirm(); backfillTasks(); backfillPapers(); backfillSpendLog();
+  backfillAffirm(); backfillTasks(); backfillPapers();
   backfillCategories(); backfillLayout(); backfillTheme(); backfillMovement(); backfillWeekNotes();
   backfillRitualDefs(); backfillBlockTypes();
+  /* v:5 additions — each idempotent and null-safe, same convention as the ones above */
+  backfillTxns(); backfillWaterGoal(); backfillMeals(); backfillLogEntries(); backfillPinning();
   if(S.readGoal===undefined) S.readGoal=150;
   if(S.mediBestSec===undefined) S.mediBestSec=0;
-  rebalancePointsScale();
   importNotionSeed(); repairNotionLinks(); migrateBlockTasksToUnified();
   migrateToUnifiedItems(); normalizeUnits(); guessTaskModes();
   return healUnits();
@@ -966,7 +1002,6 @@ function normalizeUnits(){
     if(t.targetSec===undefined) t.targetSec=0;
     if(t.doneN===undefined) t.doneN=0;
     if(t.timedN===undefined) t.timedN=0;
-    if(t.paidCents===undefined) t.paidCents=itemDone(t)&&!isRecurring(t)?centsFor(t):0;
     if(t.kind===undefined) t.kind='task';
     if(t.text===undefined) t.text=t.name||'(untitled)';
     if(t.sched===undefined) t.sched={type:'none'};
@@ -1003,7 +1038,7 @@ async function load(){
        state yet" and falls through to the v3 check / blank state below */
     try{ const r=await window.storage.get(KEY,false); raw=r?r.value:null; }catch(e){ raw=null; }
   }
-  if(raw){ try{ S=JSON.parse(raw); }catch(e){ S=blankState(); } if(!S||S.v!==4) S=blankState();
+  if(raw){ try{ S=JSON.parse(raw); }catch(e){ S=blankState(); } if(!acceptVersion()) S=blankState();
     await snapshotBeforeUnify(); reportHeal(hydrateState()); save(); return; }
   /* no artifact storage here (e.g. this is the GitHub Pages deploy) - if a sync token is already
      saved in this browser, the repo's data branch is the durable store, so try it before ever
@@ -1108,8 +1143,12 @@ function shiftKey(k,n){ const p=k.split('-').map(Number); const dt=new Date(p[0]
 function daysBetween(a,b){ const p=a.split('-').map(Number),q=b.split('-').map(Number);
   return Math.round((new Date(q[0],q[1]-1,q[2])-new Date(p[0],p[1]-1,p[2]))/86400000); }
 function day(k){ k=k||today();
-  if(!S.days[k]) S.days[k]={water:0,log:[],done:{},blocks:[],ex:{},exLog:[],pagesLogged:0,pagesBy:{},bookLog:[],pomos:0,qdone:{},questAssign:{},ptsEarned:0};
+  if(!S.days[k]) S.days[k]={water:0,log:[],done:{},blocks:[],ex:{},exLog:[],pagesLogged:0,pagesBy:{},bookLog:[],pomos:0,qdone:{},questAssign:{},goal:(S.waterGoal||100),meals:[]};
   const d=S.days[k];
+  /* the water goal in force the day this record was created, frozen here on purpose: changing
+     S.waterGoal today must not retroactively make a past day pass or fail its streak */
+  if(d.goal===undefined) d.goal=S.waterGoal||100;
+  if(!d.meals) d.meals=[];
   if(!d.pagesBy) d.pagesBy={};
   if(!d.qdone) d.qdone={};
   if(!d.questAssign) d.questAssign={};
@@ -1118,7 +1157,6 @@ function day(k){ k=k||today();
   if(!d.exLog) d.exLog=[];
   if(!d.secs) d.secs={};
   if(!d.bookLog) d.bookLog=[];
-  if(d.ptsEarned===undefined) d.ptsEarned=0;
   if(!d.plan) d.plan={items:[],notes:''};
   if(d.mediMin===undefined) d.mediMin=0;
   if(!d.skipped) d.skipped={};
@@ -1134,13 +1172,32 @@ function reconcile(){
     let k=S.lastDate;
     while(k!==t){
       const dd=S.days[k], got=dd?dd.water:0;
-      if(got<WATER_GOAL&&S.frozenDays.indexOf(k)<0&&S.freezes>0){ S.freezes--; S.frozenDays.push(k); }
+      if(got<goalOn(k)&&S.frozenDays.indexOf(k)<0&&S.freezes>0){ S.freezes--; S.frozenDays.push(k); }
       k=shiftKey(k,1); if(daysBetween(S.lastDate,k)>400) break;
     }
   }
   S.lastDate=t; recomputeStreak(); buildGaps(today()); save();
 }
-function dayCounts(k){ const dd=S.days[k]; return (dd&&dd.water>=WATER_GOAL)||S.frozenDays.indexOf(k)>=0; }
+function waterGoal(){ return S.waterGoal||100; }
+/* The goal that applies on a given day. Today and anything ahead of it track the live setting, so
+   raising the goal takes effect immediately rather than tomorrow. Days already in the past read
+   their own frozen snapshot (or the 100 that was hardcoded for all of history before v:5), so
+   changing the goal can never retroactively make a past day pass or fail its streak. */
+function goalOn(k){
+  if(k>=today()) return waterGoal();
+  const dd=S.days[k];
+  return (dd&&dd.goal)||100;
+}
+function setWaterGoal(v){
+  const n=Math.round(parseFloat(v)||0);
+  if(n<=0) return;
+  S.waterGoal=n;
+  /* keep today's snapshot in step so that when today becomes the past, it freezes at the goal
+     that was actually in force while it was being logged */
+  const d=day(today()); d.goal=n;
+  recomputeStreak(); save(); render();
+}
+function dayCounts(k){ const dd=S.days[k]; return (dd&&dd.water>=goalOn(k))||S.frozenDays.indexOf(k)>=0; }
 function recomputeStreak(){ let k=today(),n=0; if(!dayCounts(k)) k=shiftKey(k,-1);
   while(dayCounts(k)){n++;k=shiftKey(k,-1);if(n>3000)break;} S.waterStreak=n; if(n>S.waterBest)S.waterBest=n; }
 /* ===================== the unified item model =====================
@@ -1329,60 +1386,8 @@ function worstHabitIds(){
   return out;
 }
 function isWorstHabit(id){ return !!worstHabitIds()[id]; }
-function centsFor(t){
-  if(!t) return 0;
-  let base;
-  if(t.kind==='ritual') base=(t.type==='med'?CENTS.med:t.type==='core'?CENTS.core:CENTS.custom);
-  else if(t.kind==='quest') base=CENTS.quest;
-  else base=CENTS.custom;
-  if(t.priority==='High') base=Math.round(base*1.6);
-  else if(t.priority==='Low') base=Math.round(base*0.7);
-  if(t.starred) base=base*2;
-  if(isWorstHabit(t.id)) base=base*2;   /* the one you're struggling with is worth double */
-  return base;
-}
-/* returns what was ACTUALLY applied, which is not always what was asked for — the weekly cap
-   clamps it and another day's view blocks it entirely. The pay-as-you-go ledger depends on
-   knowing the difference, so it can top a task up later once headroom frees up. */
-function earn(n){
-  /* browsing or planning another day never moves money */
-  if(!isViewingToday()) return 0;
-  if(n>0){
-    const headroom=Math.max(0,WEEKLY_CAP_CENTS-weeklyCents());
-    n=Math.min(n,headroom);
-    if(n<=0) return 0;
-  }
-  /* no floor at 0 here on purpose: a real spending-log deficit (see logSpend) should be paid
-     down gradually as normal earning happens, not wiped out by the next ritual tick */
-  S.cents=S.cents+n; const d=day(today()); d.ptsEarned=(d.ptsEarned||0)+n;
-  return n;
-}
-/* ===================== pay-as-you-go ledger =====================
-   An accumulating task pays a slice of its own value as it progresses, and the slices are capped
-   at that value — nine hours of a ten-hour task shouldn't pay nothing, and it shouldn't pay more
-   than the task is worth either. t.paidCents is what has actually been handed over so far, so
-   every route in and out (progress, completion, un-completion, starring) is just "settle up to
-   what's owed now" rather than a separate hand-rolled adjustment. */
-function payUnitTo(t,cents){
-  const already=t.paidCents||0;
-  const delta=Math.round(cents)-already;
-  if(!delta) return 0;
-  const applied=earn(delta);
-  t.paidCents=already+applied;
-  return applied;
-}
-function settlePay(t){
-  /* a habit pays fresh every day, so it has no running ledger to settle */
-  if(isRecurring(t)) return;
-  const full=centsFor(t), m=modeOf(t), tgt=targetOf(t);
-  let owed=0;
-  if(itemDone(t)) owed=full;
-  else if(modeHasTarget(m)&&tgt) owed=full*Math.min(1,progressOf(t)/tgt);
-  payUnitTo(t,owed);
-}
+/* money formatting is still needed — for the budget tracker, which deals in real dollars */
 function dollarsStr(cents){ return '$'+(Math.max(0,cents)/100).toFixed(2); }
-function fmtSigned(cents){ const neg=cents<0; return (neg?'-$':'$')+(Math.abs(cents)/100).toFixed(2); }
-function weeklyCents(){ let t=0; for(let n=0;n<7;n++){ const dd=S.days[shiftKey(today(),-n)]; if(dd) t+=dd.ptsEarned||0; } return t; }
 /* ===================== inline edit / two-tap confirm ===================== */
 let editing=null, armed=null;
 function toggleEdit(id){ editing=editing===id?null:id; armed=null; render(); }
@@ -1395,18 +1400,18 @@ function toggleUnit(id,ev){
   const k=vday(), d=day(k), was=itemDone(t,k);
   if(was){
     if(t.type==='med'&&!arm('undo:'+id)) return;
-    if(isRecurring(t)){ delete d.done[id]; earn(-centsFor(t)); }
-    else { t.done=false; t.doneAt=null; settlePay(t); }
+    if(isRecurring(t)) delete d.done[id];
+    else { t.done=false; t.doneAt=null; }
     armed=null;
   }else{
     /* a running timer has done its job the moment you tick the box — leaving it ticking silently
        in the background was inflating totals for hours after the fact */
     stopTimer(t,k);
-    if(isRecurring(t)){ d.done[id]=Date.now(); earn(centsFor(t)); }
-    else { t.done=true; t.doneAt=Date.now(); settlePay(t); }
+    if(isRecurring(t)) d.done[id]=Date.now();
+    else { t.done=true; t.doneAt=Date.now(); }
     celebrateBurst();
     if(t.blockId){ const b=blockOf(t.blockId);
-      if(b&&isBlockCleared(b)){ earn(CENTS.blockClear); celebrateBurst(true); toast('Block cleared \u2014 '+(b.focus||'untitled')); } }
+      if(b&&isBlockCleared(b)){ celebrateBurst(true); toast('Block cleared \u2014 '+(b.focus||'untitled')); } }
   }
   save();
   /* the seal follows the ritual the habit belongs to, not the block it happens to be drawn in —
@@ -1425,7 +1430,7 @@ function skipItem(id,ev){
   const k=vday(), d=day(k);
   if(d.skipped[id]){ delete d.skipped[id]; toast('Back on the list'); }
   else{
-    if(itemDone(t,k)){ if(isRecurring(t)) delete d.done[id]; else t.done=false; earn(-centsFor(t)); }
+    if(itemDone(t,k)){ if(isRecurring(t)) delete d.done[id]; else t.done=false; }
     d.skipped[id]=Date.now();
     toast('Skipped for '+(isViewingToday()?'today':vdayLabel().toLowerCase())+' \u2014 streak safe');
   }
@@ -1752,7 +1757,7 @@ function checkSeal(r){
   const req=itemsFor(r).filter(function(t){return t.type==='core'||t.type==='med';});
   if(req.length&&req.every(function(t){return itemDone(t);})){
     const key='seal_'+r;
-    if(!d.done[key]){ d.done[key]=Date.now(); earn(CENTS.seal); save(); celebrateBurst(true);
+    if(!d.done[key]){ d.done[key]=Date.now(); save(); celebrateBurst(true);
       /* the ritual's home is its routine block on the timeline now, so that's what celebrates */
       const rb=routineBlockFor(r);
       const c=document.getElementById(rb?'tb-'+rb.id:'panel-'+r);
@@ -1763,25 +1768,22 @@ function checkSeal(r){
 /* ===================== ritual item habit grid (any day, not just today) =====================
    The rituals UI above only ever reads/writes today's day() record. The habit grid needs to
    toggle a single item (e.g. "brush teeth") done/not-done for any of the last 7 days, so these
-   are day-keyed equivalents of isDone/castItem/uncast/checkSeal. Money still credits to the
-   current balance "now" (via earn(), which always books to today's ptsEarned bucket) regardless
-   of which calendar day the habit itself is tagged to — same convention as backdated spend-log
-   entries. */
+   are day-keyed equivalents of isDone/castItem/uncast/checkSeal. */
 function itemDoneOnDay(itemId,dayKey){ const dd=S.days[dayKey]; return !!(dd&&dd.done&&dd.done[itemId]); }
 function toggleItemOnDay(itemId,dayKey){
   const t=unitById(itemId); if(!t) return;
   const dd=day(dayKey);
   const wasDone=!!dd.done[itemId];
-  if(wasDone){ delete dd.done[itemId]; earn(-centsFor(t)); }
-  else { dd.done[itemId]=Date.now(); earn(centsFor(t)); }
+  if(wasDone) delete dd.done[itemId];
+  else dd.done[itemId]=Date.now();
   const r=t.ritual;
   if(isRitualId(r)){
     const req=ritualRoster(r).filter(function(i){return i.type==='core'||i.type==='med';});
     const key='seal_'+r;
     const allDone=req.length>0&&req.every(function(i){return !!dd.done[i.id];});
     const hadSeal=!!dd.done[key];
-    if(allDone&&!hadSeal){ dd.done[key]=Date.now(); earn(CENTS.seal); }
-    else if(!allDone&&hadSeal){ delete dd.done[key]; earn(-CENTS.seal); }
+    if(allDone&&!hadSeal) dd.done[key]=Date.now();
+    else if(!allDone&&hadSeal) delete dd.done[key];
   }
   save(); render();
 }
@@ -1970,12 +1972,7 @@ function subtaskRowsHTML(t){
 function toggleTaskStar(id,ev){
   if(ev)ev.stopPropagation();
   const t=taskById(id); if(!t) return;
-  const wasWorth=centsFor(t), wasDone=itemDone(t);
   t.starred=!t.starred;
-  /* the ledger handles the adjustment: whatever was already paid for this task is topped up or
-     clawed back to match its new value, whether it's finished, part-done, or untouched */
-  if(isRecurring(t)){ if(wasDone) earn(centsFor(t)-wasWorth); }
-  else settlePay(t);
   save(); render();
 }
 /* ===================== task modes: setters ===================== */
@@ -1987,13 +1984,13 @@ function setTaskMode(id,m,ev){
   /* give a freshly-promoted task a sensible target so the bar isn't stuck at 0% with no way in */
   if(m==='count'&&!t.targetN) t.targetN=10;
   if((m==='timed'||m==='cumulative')&&!t.targetSec) t.targetSec=(m==='timed'?15*60:5*3600);
-  settlePay(t); save(); render();
+  save(); render();
 }
 function setTaskTargetN(id,v){
   const t=unitById(id); if(!t) return;
   const n=parseInt(v,10);
   t.targetN=(isFinite(n)&&n>0)?n:0;
-  settlePay(t); save(); render();
+  save(); render();
 }
 /* entered in minutes for a timed task, hours for a cumulative one — those are the units you'd
    actually say out loud for each */
@@ -2002,7 +1999,7 @@ function setTaskTargetTime(id,v){
   const n=parseFloat(v);
   const mult=modeOf(t)==='cumulative'?3600:60;
   t.targetSec=(isFinite(n)&&n>0)?Math.round(n*mult):0;
-  settlePay(t); save(); render();
+  save(); render();
 }
 function bumpCount(id,delta,ev){
   if(ev&&ev.stopPropagation) ev.stopPropagation();
@@ -2022,17 +2019,7 @@ function bumpCount(id,delta,ev){
     if((t.timedN||0)>t.doneN) t.timedN=t.doneN;
     if(itemDone(t)&&tgt&&t.doneN<tgt){ t.done=false; t.doneAt=null; }
   }
-  settlePay(t); save(); render();
-}
-/* small tasks pay a little, big/high-priority ones pay more — same idea as CENTS.custom, just
-   scaled. A starred task (really hard, high-friction, or urgent) simply doubles whatever that
-   base would have been. */
-function estimateCents(t){
-  let base=CENTS.custom;
-  if(t.priority==='High') base=Math.round(base*1.6);
-  else if(t.priority==='Low') base=Math.round(base*0.7);
-  if(t.starred) base=base*2;
-  return base;
+  save(); render();
 }
 function assignTaskToDay(id,dayKey){
   const t=taskById(id); if(!t) return;
@@ -2194,7 +2181,6 @@ function toggleTaskTimerBank(id,ev){ if(ev)ev.stopPropagation();
       t.done=true; t.doneAt=Date.now(); celebrateBurst(true);
       toast(String(t.text)+' — '+fmtHrs(tgt)+' logged');
     }
-    settlePay(t);
   }
   else t.timerStart=Date.now();
   save(); render();
@@ -2207,15 +2193,15 @@ function addWater(kind,amtOverride){
   else if(kind==='custom') amt=Math.round(amtOverride||0);
   else if(kind==='undo'){
     const last=d.log.length?d.log.pop():0; if(!last){toast('Nothing to undo');return;}
-    const was=d.water>=WATER_GOAL; d.water=Math.max(0,d.water-last);
-    if(was&&d.water<WATER_GOAL) earn(-CENTS.waterGoal);
+    d.water=Math.max(0,d.water-last);
     recomputeStreak(); save(); render(); return;
   }
   if(!amt) return;
   const before=d.water; d.water+=amt; d.log.push(amt);
   celebrateBurst();
-  if(before<WATER_GOAL&&d.water>=WATER_GOAL){ earn(CENTS.waterGoal); recomputeStreak();
-    glow('waterCard'); celebrateBurst(true); toast('100 oz — '+S.waterStreak+' day streak'); }
+  const goal=goalOn(vday());
+  if(before<goal&&d.water>=goal){ recomputeStreak();
+    glow('waterCard'); celebrateBurst(true); toast(goal+' oz — '+S.waterStreak+' day streak'); }
   if(before<FREEZE_AT&&d.water>=FREEZE_AT&&S.freezes<MAX_FREEZE){ S.freezes++;
     toast('Freeze token earned ('+S.freezes+'/'+MAX_FREEZE+')'); }
   save(); render();
@@ -2606,11 +2592,11 @@ function submitPages(id){
   b.cur=np; editing=null;
   if(gained!==0){
     const d=day(vday());
-    let gainedCents=0, removedBook=null, finishedAt=null;
+    let removedBook=null, finishedAt=null;
     if(gained>0){
       d.pagesLogged=(d.pagesLogged||0)+gained;
       d.pagesBy[id]=(d.pagesBy[id]||0)+gained;
-      earn(CENTS.pages); gainedCents=CENTS.pages; celebrateBurst();
+      celebrateBurst();
     }
     if(b.cur>=b.pages){
       finishedAt=Date.now();
@@ -2620,7 +2606,7 @@ function submitPages(id){
       celebrateBurst(true);
       toast('Finished “'+b.title+'” — onto the shelf');
     } else if(gained>0) toast('+'+gained+' pages');
-    d.bookLog.push({bookId:id, prevCur:prevCur, newCur:np, gainedCents:gainedCents, removedBook:removedBook, finishedAt:finishedAt});
+    d.bookLog.push({bookId:id, prevCur:prevCur, newCur:np, removedBook:removedBook, finishedAt:finishedAt});
   }
   save(); render();
 }
@@ -2635,11 +2621,10 @@ function undoBook(){
     const b=S.books.filter(function(x){return x.id===last.bookId;})[0];
     if(b) b.cur=last.prevCur;
   }
-  if(last.gainedCents){
+  if(last.newCur>last.prevCur){
     const delta=last.newCur-last.prevCur;
     d.pagesLogged=Math.max(0,(d.pagesLogged||0)-delta);
     d.pagesBy[last.bookId]=Math.max(0,(d.pagesBy[last.bookId]||0)-delta);
-    earn(-last.gainedCents);
   }
   toast('Undid page update');
   save(); render();
@@ -2682,12 +2667,9 @@ function cyclePaperStatus(id,ev){ if(ev)ev.stopPropagation();
   const p=paperById(id); if(!p) return;
   const i=PAPER_STATUSES.indexOf(p.status);
   const ni=(i+1)%PAPER_STATUSES.length;
-  const delta=PAPER_STATUS_CENTS[ni]-PAPER_STATUS_CENTS[i];
   p.status=PAPER_STATUSES[ni];
-  if(delta) earn(delta);
   save(); render();
-  const tag=delta>0?' +$'+(delta/100).toFixed(2):(delta<0?' -$'+(-delta/100).toFixed(2):'');
-  toast(p.status+tag);
+  toast(p.status);
 }
 function delPaper(id,ev){ if(ev)ev.stopPropagation(); if(!arm('pp:'+id))return;
   S.papers=S.papers.filter(function(p){return p.id!==id;});
@@ -2719,7 +2701,7 @@ function logMeditationMinutes(min){
   if(min<=0) return;
   const d=day(vday());
   d.mediMin=(d.mediMin||0)+min;
-  if(!d.done['medit']){ d.done['medit']=Date.now(); earn(CENTS.quest); }
+  if(!d.done['medit']) d.done['medit']=Date.now();
   const secs=Math.round(min*60);
   if(secs>(S.mediBestSec||0)){ S.mediBestSec=secs; toast('New personal best · '+mmss(secs)); }
   else toast(Math.round(min)+' min meditation logged');
@@ -2841,7 +2823,7 @@ function toggleActTimer(actId){
     const d=day(vday()); d.ex[actId]=(d.ex[actId]||0)+minutes;
     d.exLog.push({act:actId,min:minutes});
     delete S.actTimers[actId];
-    earn(CENTS.move); celebrateBurst();
+    celebrateBurst();
     const a=allActs().filter(function(x){return x.id===actId;})[0];
     toast((a?a.name+' — ':'')+minutes+' min logged');
   }else{
@@ -2854,7 +2836,6 @@ function undoMove(){
   if(!d.exLog.length){ toast('Nothing to undo'); return; }
   const last=d.exLog.pop();
   d.ex[last.act]=Math.max(0,(d.ex[last.act]||0)-last.min);
-  earn(-CENTS.move);
   const a=allActs().filter(function(x){return x.id===last.act;})[0];
   toast('Undid '+last.min+' min '+(a?a.name:last.act));
   save(); render();
@@ -2892,38 +2873,39 @@ function submitMoveGoal(){
 function submitReadGoal(){
   const el=document.getElementById('readGoalIn'); const g=Math.round(parseFloat(el.value)||0);
   if(g>0){ S.readGoal=g; editing=null; save(); render(); } }
-/* ===================== tea / treats ===================== */
 function setTea(i,v){ const k=vday(); const t=S.tea[k]||['','','']; t[i]=v; S.tea[k]=t; save(); }
-function redeem(id){
-  const r=S.treats.filter(function(x){return x.id===id;})[0];
-  const cost=Math.round(r.points);
-  if(S.cents<cost){ toast(dollarsStr(cost-S.cents)+' more to go'); return; }
-  if(!arm('redeem:'+id)) return;
-  S.cents-=cost; S.redeemed.push({name:r.name,at:Date.now()});
-  armed=null; celebrateBurst(true); toast('Enjoy: '+r.name); save(); render();
+/* ===================== spending / budget =====================
+   Real money, and only real money. This used to debit the points balance (a purchase made you
+   "go into deficit" against earned points); with the economy gone these are simply transactions
+   against a monthly budget. Amounts are integer cents throughout — dollars exist only at the
+   input and output edges. */
+function budgetMonthlyCents(){ return (S.budget&&S.budget.monthlyCents)||0; }
+/* the budget period containing dayKey, honouring a start-of-month other than the 1st */
+function budgetPeriodOf(k){
+  const p=k.split('-').map(Number);
+  const startsOn=(S.budget&&S.budget.startsOn)||1;
+  let y=p[0], m=p[1];
+  if(p[2]<startsOn){ m--; if(m<1){ m=12; y--; } }
+  return y+'-'+String(m).padStart(2,'0');
 }
-function addTreat(){
-  const n=document.getElementById('newTreatName').value.trim();
-  const c=Math.round(parseFloat(document.getElementById('newTreatCost').value)||0);
-  if(!n||!c)return;
-  S.treats.push({id:'tr'+Date.now(),name:n,points:c});
-  document.getElementById('newTreatName').value=''; document.getElementById('newTreatCost').value='';
-  save(); render();
+function txnsInPeriod(period){
+  period=period||budgetPeriodOf(vday());
+  return (S.txns||[]).filter(function(t){ return budgetPeriodOf(t.day)===period; });
 }
-function delTreat(id,ev){ ev.stopPropagation(); if(!arm('tr:'+id))return;
-  S.treats=S.treats.filter(function(t){return t.id!==id;}); armed=null; save(); render(); }
-/* ===================== spending log =====================
-   For real, already-happened purchases (a coffee, a book, anything discretionary). Unlike
-   redeem(), this is allowed to push S.cents negative — that negative balance IS the deficit,
-   and it gets paid back down by ordinary earning over the following days. */
-function logSpend(name,amountCents,dayKey){
+function spentInPeriod(period){
+  return txnsInPeriod(period).reduce(function(a,t){ return a+(t.amountCents||0); },0);
+}
+function remainingCents(period){ return budgetMonthlyCents()-spentInPeriod(period); }
+function logSpend(name,amountCents,dayKey,cat){
   dayKey=dayKey||vday();
-  S.cents-=amountCents;
-  S.spendLog.unshift({id:'sp'+Date.now()+Math.random().toString(36).slice(2,7), name:name, amount:amountCents, at:Date.now(), day:dayKey, balanceAfter:S.cents});
-  if(S.spendLog.length>200) S.spendLog.length=200;
+  S.txns.unshift({id:'tx'+Date.now()+Math.random().toString(36).slice(2,7), name:name,
+    amountCents:amountCents, cat:cat||'Uncategorized', at:Date.now(), day:dayKey});
+  if(S.txns.length>500) S.txns.length=500;
   save(); render();
-  toast(S.cents>=0?'logged '+dollarsStr(amountCents)+' · '+fmtSigned(S.cents)+' left'
-                  :'logged '+dollarsStr(amountCents)+' · '+fmtSigned(S.cents)+' deficit');
+  const left=remainingCents();
+  toast(budgetMonthlyCents()
+    ? 'logged '+dollarsStr(amountCents)+' · '+dollarsStr(Math.max(0,left))+' left'
+    : 'logged '+dollarsStr(amountCents));
 }
 function addSpend(){
   const nameEl=document.getElementById('spendName'), amtEl=document.getElementById('spendAmt');
@@ -2933,12 +2915,23 @@ function addSpend(){
   logSpend(name,amt,vday());
   nameEl.value=''; amtEl.value='';
 }
+/* deleting a transaction is now just a delete — there is no balance to put back */
 function delSpend(id,ev){ if(ev)ev.stopPropagation(); if(!arm('sp:'+id)) return;
-  const item=S.spendLog.filter(function(s){return s.id===id;})[0];
-  if(item) S.cents+=item.amount; /* reverse it out */
-  S.spendLog=S.spendLog.filter(function(s){return s.id!==id;});
+  S.txns=S.txns.filter(function(t){return t.id!==id;});
   armed=null; save(); render();
 }
+function setTxnName(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t) return; const nv=(v||'').trim(); if(nv) t.name=nv; save(); }
+function setTxnAmount(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t) return; const n=Math.round((parseFloat(v)||0)*100); if(n>0) t.amountCents=n; save(); render(); }
+function setTxnDay(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t||!/^\d{4}-\d{2}-\d{2}$/.test(v||'')) return; t.day=v; save(); render(); }
+function setTxnCat(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t) return; t.cat=v||'Uncategorized'; save(); render(); }
+function addTxnCat(name){ name=(name||'').trim();
+  if(!name||S.txnCats.indexOf(name)>=0) return; S.txnCats.push(name); save(); render(); }
+function setBudgetMonthly(v){ const n=Math.round((parseFloat(v)||0)*100);
+  S.budget.monthlyCents=Math.max(0,n); save(); render(); }
 /* ===================== habit streak grid =====================
    Same visual language as the no-spend row, but inverted: here presence (not absence) of the
    habit is the win. Only habits with a clean built-in daily pass/fail signal get a row —
@@ -2952,7 +2945,7 @@ function habitDoneOnDay(habitId,dayKey){
   const dd=S.days[dayKey];
   if(habitId==='sunrise') return !!(dd&&dd.done&&dd.done['seal_sunrise']);
   if(habitId==='moonlight') return !!(dd&&dd.done&&dd.done['seal_moonlight']);
-  if(habitId==='water') return !!(dd&&dd.water>=WATER_GOAL)||S.frozenDays.indexOf(dayKey)>=0;
+  if(habitId==='water') return !!(dd&&dd.water>=goalOn(dayKey))||S.frozenDays.indexOf(dayKey)>=0;
   return false;
 }
 function habitStreak(habitId){
@@ -2968,7 +2961,7 @@ function habitStreak(habitId){
   return streak;
 }
 /* ===================== no-spend streak ===================== */
-function spentOnDay(dayKey){ return S.spendLog.some(function(s){return s.day===dayKey;}); }
+function spentOnDay(dayKey){ return (S.txns||[]).some(function(t){return t.day===dayKey;}); }
 function noSpendStreak(){
   let streak=0;
   for(let n=0;n<365;n++){
@@ -3064,7 +3057,6 @@ function celebrateBurst(big){
     setTimeout(function(){el.remove();},760);
   }
 }
-function ptsStr(n){ return Math.round(n)+' pts'; }
 /* ===================== view mode ===================== */
 let viewMode='today';
 const VIEWS=['today','planning','notes','month','more'];
@@ -3316,7 +3308,7 @@ function focusTick(){
 function awardFocusSegment(){
   const d=day(vday());
   d.focusSegs[focusBlockId]=(d.focusSegs[focusBlockId]||0)+1;
-  earn(CENTS.pomo); save();
+  save();
 }
 function startFocusBreak(){ if(!focusState) return; focusState.breakOffered=false; focusState.onBreak=true; focusState.breakSec=300; renderFocusSession(); }
 function dismissFocusBreak(){ if(!focusState) return; focusState.breakOffered=false; renderFocusSession(); }
@@ -3364,7 +3356,7 @@ function renderFocusSession(){
        '<div class="qempty">nothing pinned to this block yet</div>')+'</div>';
   }
   h+='<div class="focusaside">';
-  h+='<div class="focuswater">💧 '+d.water+' / '+WATER_GOAL+' oz'+
+  h+='<div class="focuswater">💧 '+d.water+' / '+goalOn(vday())+' oz'+
      '<button class="btn tiny soft" onclick="addWater(\'full\')">+cup</button></div>';
   h+='<textarea class="focusnotes" placeholder="notes…" onchange="setNotes(\''+b.id+'\',this.value)">'+(b.notes||'')+'</textarea>';
   h+='<div class="focusadd"><input id="focusCaptureIn" placeholder="something for later, so it doesn’t derail the session…" maxlength="120" '+
@@ -3700,31 +3692,30 @@ function render(){
   }
   let req=[], doneC=0;
   (S.ritualDefs||[]).forEach(function(rd){ itemsFor(rd.id).forEach(function(i){ if(i.type==='core'||i.type==='med'){ req.push(i); if(isDone(i.id)) doneC++; } }); });
-  const overall=Math.round(((doneC/Math.max(1,req.length))*0.7+Math.min(1,d.water/WATER_GOAL)*0.3)*100);
+  const overall=Math.round(((doneC/Math.max(1,req.length))*0.7+Math.min(1,d.water/goalOn(vday()))*0.3)*100);
   document.getElementById('dayPct').textContent=overall+'%';
   document.getElementById('dayFill').style.width=overall+'%';
-  document.getElementById('pointsPill').textContent=ptsStr(S.cents);
   renderFocusSession();
   /* water lives in the app header now (waterHeader/waterFillHeader/cupCaptionHeader), so it has
      to render on every view, not just today — this block runs before the view branches below,
      and the detail card (still full waterCard, now parked in the more tab) is refreshed further
      down alongside the rest of the more-tab cards so its elements only get touched when present. */
   const hv=vessel();
-  const hNumCups=Math.max(1,Math.round(WATER_GOAL/hv.oz));
-  const hWaterPct=Math.min(100,Math.round(d.water/WATER_GOAL*100));
+  const hNumCups=Math.max(1,Math.round(goalOn(vday())/hv.oz));
+  const hWaterPct=Math.min(100,Math.round(d.water/goalOn(vday())*100));
   const waterFillHeaderEl=document.getElementById('waterFillHeader');
   if(waterFillHeaderEl) waterFillHeaderEl.style.width=hWaterPct+'%';
   const waterHeaderEl=document.getElementById('waterHeader');
-  if(waterHeaderEl) waterHeaderEl.classList.toggle('full',d.water>=WATER_GOAL);
+  if(waterHeaderEl) waterHeaderEl.classList.toggle('full',d.water>=goalOn(vday()));
   const cupCaptionHeaderEl=document.getElementById('cupCaptionHeader');
-  if(cupCaptionHeaderEl) cupCaptionHeaderEl.textContent=d.water+'/'+WATER_GOAL+'oz';
+  if(cupCaptionHeaderEl) cupCaptionHeaderEl.textContent=d.water+'/'+goalOn(vday())+'oz';
   renderRitualQuickRow();
   if(viewMode==='notes'){ renderNotes(); return; }
   if(viewMode==='month'){ renderMonth(); return; }
   if(viewMode==='planning'){ renderTaskBank(); renderFutureLog(); renderPlan(); renderUnassignedBanner(); return; }
   /* everything below here used to be gated to the today view only, back when every one of these
      cards lived there. Now most of them (water detail, habit streaks, meditation, books,
-     movement, treats, spend, papers, today's-tasks) live in the more tab instead — but their
+     movement, spend, papers, today's-tasks) live in the more tab instead — but their
      DOM nodes are always present (display:none on the container, not removed), so it's simplest
      to just keep refreshing them every render() regardless of which tab is on screen, and only
      gate the two genuinely today-only pieces (the timeline itself and the quest dock). */
@@ -3732,29 +3723,29 @@ function render(){
   renderTodayTasksCard(); renderPapers(); renderUnassignedBanner();
   document.getElementById('cnt-day').textContent=d.blocks.filter(isBlockCleared).length+'/'+d.blocks.length+' blocks cleared';
   const v=vessel();
-  const numCups=Math.max(1,Math.round(WATER_GOAL/v.oz));
+  const numCups=Math.max(1,Math.round(goalOn(vday())/v.oz));
   const halfSteps=Math.min(numCups,Math.round(d.water/v.oz*2)/2);
-  const waterPct=Math.min(100,Math.round(d.water/WATER_GOAL*100));
+  const waterPct=Math.min(100,Math.round(d.water/goalOn(vday())*100));
   const waterBarEl=document.getElementById('waterBar');
-  if(waterBarEl) waterBarEl.classList.toggle('full',d.water>=WATER_GOAL);
+  if(waterBarEl) waterBarEl.classList.toggle('full',d.water>=goalOn(vday()));
   const waterFillEl=document.getElementById('waterFill');
   if(waterFillEl) waterFillEl.style.width=waterPct+'%';
   const waterDivEl=document.getElementById('waterDividers');
   if(waterDivEl){
     /* dividers mark real cup-sized boundaries (i cups * this vessel's oz), not an even 1/numCups
        split — numCups is rounded, so an even split drifts away from where the fill bar actually
-       is whenever WATER_GOAL isn't a clean multiple of the vessel size */
+       is whenever the goal isn't a clean multiple of the vessel size */
     let dh='';
     for(let i=1;i<numCups;i++){
-      const pos=Math.min(100,Math.round(i*v.oz/WATER_GOAL*100));
+      const pos=Math.min(100,Math.round(i*v.oz/goalOn(vday())*100));
       if(pos>=100) continue;
       const past=pos<=waterPct;
       dh+='<div class="wdiv'+(past?' past':'')+'" style="left:'+pos+'%"></div>';
     }
     waterDivEl.innerHTML=dh;
   }
-  document.getElementById('cupCaption').textContent=d.water+' / '+WATER_GOAL+' oz · '+fmtCups(halfSteps)+' of '+numCups+' '+v.name.toLowerCase()+' cups';
-  document.getElementById('waterHint').textContent=d.water>=WATER_GOAL?'goal met':(WATER_GOAL-d.water)+' oz to go';
+  document.getElementById('cupCaption').textContent=d.water+' / '+goalOn(vday())+' oz · '+fmtCups(halfSteps)+' of '+numCups+' '+v.name.toLowerCase()+' cups';
+  document.getElementById('waterHint').textContent=d.water>=goalOn(vday())?'goal met':(goalOn(vday())-d.water)+' oz to go';
   document.getElementById('vesselSel').innerHTML=S.vessels.map(function(x,i){
     return '<option value="'+i+'"'+(i===S.vesselIdx?' selected':'')+'>'+x.name+' · '+x.oz+'oz</option>';}).join('');
   document.getElementById('wStreakN').textContent=S.waterStreak;
@@ -3916,36 +3907,30 @@ function render(){
   document.getElementById('moveEditBox').innerHTML= editing==='moveGoal'?
     '<div class="inline-edit"><span class="lbl">weekly minutes</span><input id="moveGoalIn" type="number" min="10" value="'+S.moveGoal+'">'+
     '<button class="btn tiny" onclick="submitMoveGoal()">save</button><button class="btn tiny ghost" onclick="toggleEdit(null)">cancel</button></div>':'';
-  const bankVEl=document.getElementById('bankV');
-  bankVEl.textContent=fmtSigned(S.cents);
-  bankVEl.style.color=S.cents<0?'var(--pink-deep)':'';
-  document.getElementById('bankLbl').textContent=S.cents<0?'in deficit':'saved up';
-  const wkCents=weeklyCents();
-  document.getElementById('weekV').textContent=fmtSigned(wkCents)+' of $'+(WEEKLY_TARGET_CENTS/100).toFixed(0)+' goal · $'+(WEEKLY_CAP_CENTS/100).toFixed(0)+' cap';
-  document.getElementById('weekBarFill').style.width=Math.min(100,Math.max(0,Math.round(wkCents/WEEKLY_CAP_CENTS*100)))+'%';
-  document.getElementById('weekBarTarget').style.left=Math.round(WEEKLY_TARGET_CENTS/WEEKLY_CAP_CENTS*100)+'%';
-  document.getElementById('treatList').innerHTML=S.treats.map(function(t){
-    const cost=Math.round(t.points);
-    const pct=Math.min(100,Math.round(S.cents/cost*100));
-    const rArm=armed==='redeem:'+t.id, dArm=armed==='tr:'+t.id;
-    return '<div class="treat"><span class="nm">'+t.name+'</span>'+
-      '<div class="bar sun"><div class="fill" style="width:'+pct+'%"></div></div>'+
-      '<span class="cost">'+t.points+' pts</span>'+
-      '<button class="btn tiny soft'+(rArm?' danger':'')+'" onclick="redeem(\''+t.id+'\')"'+(S.cents<cost?' disabled':'')+'>'+(rArm?'confirm':'redeem')+'</button>'+
-      '<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.4" onclick="delTreat(\''+t.id+'\',event)">'+(dArm?'sure?':'✕')+'</button></div>';}).join('');
-  document.getElementById('redeemedLine').textContent=S.redeemed.length?
-    'redeemed: '+S.redeemed.slice(-3).map(function(r){return r.name;}).join(' · '):'';
+  /* budget summary — remaining against the monthly allowance, or just the period total when no
+     budget has been set yet */
+  const budEl=document.getElementById('budgetV');
+  if(budEl){
+    const monthly=budgetMonthlyCents(), spent=spentInPeriod(), left=monthly-spent;
+    budEl.textContent=monthly?dollarsStr(Math.max(0,left)):dollarsStr(spent);
+    budEl.style.color=(monthly&&left<0)?'var(--pink-deep)':'';
+    const budLbl=document.getElementById('budgetLbl');
+    if(budLbl) budLbl.textContent=monthly
+      ? (left<0?'over by '+dollarsStr(-left):'left of '+dollarsStr(monthly))
+      : 'spent this period';
+    const budFill=document.getElementById('budgetBarFill');
+    if(budFill) budFill.style.width=(monthly?Math.min(100,Math.max(0,Math.round(spent/monthly*100))):0)+'%';
+  }
   const spendListEl=document.getElementById('spendList');
   if(spendListEl){
-    spendListEl.innerHTML=S.spendLog.length?S.spendLog.slice(0,25).map(function(s){
+    const txns=S.txns||[];
+    spendListEl.innerHTML=txns.length?txns.slice(0,25).map(function(s){
       const dArm=armed==='sp:'+s.id;
       const dp=(s.day||today()).split('-').map(Number);
       const when=new Date(dp[0],dp[1]-1,dp[2]).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-      const balClass=s.balanceAfter<0?'neg':'pos';
-      const balTxt=s.balanceAfter<0?fmtSigned(s.balanceAfter)+' deficit':fmtSigned(s.balanceAfter)+' left';
       return '<div class="spend"><span class="nm">'+String(s.name).replace(/</g,'&lt;')+'</span>'+
-        '<span class="amt">'+dollarsStr(s.amount)+'</span>'+
-        '<span class="bal '+balClass+'">'+balTxt+'</span>'+
+        '<span class="amt">'+dollarsStr(s.amountCents)+'</span>'+
+        '<span class="bal">'+String(s.cat||'').replace(/</g,'&lt;')+'</span>'+
         '<span class="when">'+when+'</span>'+
         '<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.4" onclick="delSpend(\''+s.id+'\',event)">'+(dArm?'sure?':'✕')+'</button></div>';
     }).join(''):'<div class="redeemed-line">nothing logged yet</div>';
@@ -4052,7 +4037,7 @@ function dayStats(k){
   const doneN=req.filter(function(i){return dd.done&&dd.done[i.id];}).length;
   const exMin=dd.ex?Object.keys(dd.ex).reduce(function(a,k){return a+dd.ex[k];},0):0;
   const quests=dd.qdone?Object.keys(dd.qdone).length:0;
-  return {habitPct:req.length?doneN/req.length:0, pages:dd.pagesLogged||0, exMin:exMin, waterHit:dd.water>=WATER_GOAL, quests:quests, hasData:true};
+  return {habitPct:req.length?doneN/req.length:0, pages:dd.pagesLogged||0, exMin:exMin, waterHit:dd.water>=goalOn(k), quests:quests, hasData:true};
 }
 function renderMonth(){
   const now=new Date(); const y=now.getFullYear(), m=now.getMonth();

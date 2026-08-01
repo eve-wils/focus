@@ -33,7 +33,6 @@
       </div>
       <div id="unassignedBanner" style="display:none"></div>
     <div class="ritualquickrow" id="ritualQuickRow"></div>
-    <div class="pointspill" id="pointsPill">0 pts</div>
     <div class="viewtabs">
     <button class="vtab on" id="vtab-today" onclick="setView('today')">day</button>
     <button class="vtab" id="vtab-planning" onclick="setView('planning')">week</button>
@@ -234,21 +233,10 @@
           <button class="btn tiny soft" onclick="addPaperFromForm()">add paper</button>
         </div>
       </div>
-      <div class="card" id="treatsCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'treatsCard')">
-        <header draggable="true" ondragstart="onCardDragStart(event,'treatsCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('treatsCard')"><span class="lbl">treats</span><span class="cardchev">▾</span></header>
-        <div class="moneyline"><span class="pv" id="bankV">$0.00</span><span class="pl" id="bankLbl">saved up</span></div>
-        <div class="weekline" id="weekLine">this week so far: <b id="weekV">$0.00</b></div>
-        <div class="weekbar"><div class="weekbarfill" id="weekBarFill" style="width:0%"></div><div class="weekbartarget" id="weekBarTarget"></div></div>
-        <div id="treatList"></div>
-        <div class="addrow">
-          <input id="newTreatName" placeholder="a treat to earn" maxlength="36" style="flex:2">
-          <input id="newTreatCost" placeholder="pts" type="number" min="10" step="10" style="flex:0 0 56px;text-align:center">
-          <button class="btn tiny soft" onclick="addTreat()">add</button>
-        </div>
-        <div class="redeemed-line" id="redeemedLine"></div>
-      </div>
       <div class="card" id="spendCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'spendCard')">
-        <header draggable="true" ondragstart="onCardDragStart(event,'spendCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('spendCard')"><span class="lbl">spending log</span><span class="sub">unnecessary spends make a deficit or savings</span><span class="cardchev">▾</span></header>
+        <header draggable="true" ondragstart="onCardDragStart(event,'spendCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('spendCard')"><span class="lbl">spending</span><span class="sub">real purchases against a monthly budget</span><span class="cardchev">▾</span></header>
+        <div class="moneyline"><span class="pv" id="budgetV">$0.00</span><span class="pl" id="budgetLbl">spent this period</span></div>
+        <div class="weekbar"><div class="weekbarfill" id="budgetBarFill" style="width:0%"></div></div>
         <div id="spendList"></div>
         <div class="addrow">
           <input id="spendName" placeholder="what did you buy?" maxlength="60" style="flex:2">
