@@ -8,15 +8,20 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:wght@400;600;700&family=Quicksand:wght@500;600;700&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="aura a1"></div><div class="aura a2"></div><div class="aura a3"></div>
+<!-- Prism Terminal mobile shell: header + tab bar. Hidden above 760px, where the desktop
+     hero/tab strip takes over. Both drive the same setView() router. -->
+<div id="prismShell"></div>
+<div id="prismFocus"></div>
 <div class="wrap">
   <div class="hero">
     <div class="left">
-      <div class="greetrow"><span class="greet" id="greet">Good morning</span><span class="date" id="dateLine">—</span></div>
+      <div class="greet" id="greet">Good morning</div>
+      <div class="date" id="dateLine">—</div>
       <div class="daynav">
         <button class="navbtn" onclick="shiftViewDay(-1)" aria-label="previous day">‹</button>
         <button class="navday" id="navDayLabel" onclick="goToday()" title="tap to jump back to today">T</button>
@@ -30,93 +35,29 @@
       </div>
     </div>
     <div class="heroright">
-      <div class="viewtabs">
-        <button class="vtab on" id="vtab-today" onclick="setView('today')">day</button>
-        <button class="vtab" id="vtab-planning" onclick="setView('planning')">week</button>
-        <button class="vtab" id="vtab-month" onclick="setView('month')">month</button>
-        <button class="vtab" id="vtab-notes" onclick="setView('notes')">notes</button>
-        <button class="vtab" id="vtab-more" onclick="setView('more')">more</button>
+      <div class="waterheader" id="waterHeader" onclick="cupClick()" title="tap = half a cup, double-tap = a full cup">
+        <span class="whlabel">💧</span>
+        <div class="whbar"><div class="whfill" id="waterFillHeader" style="width:0%"></div></div>
+        <span class="whcap" id="cupCaptionHeader"></span>
       </div>
-      <div class="herostats">
-        <div class="waterheader" id="waterHeader" onclick="cupClick()" title="tap = half a cup, double-tap = a full cup">
-          <span class="whlabel">💧</span>
-          <div class="whbar"><div class="whfill" id="waterFillHeader" style="width:0%"></div></div>
-          <span class="whcap" id="cupCaptionHeader"></span>
-        </div>
-        <div class="pointspill" id="pointsPill">0 pts</div>
-        <button class="gearbtn" title="appearance settings" onclick="toggleSettingsPanel()">⚙</button>
-      </div>
+    <div class="ritualquickrow" id="ritualQuickRow"></div>
+    <div class="viewtabs">
+    <button class="vtab on" id="vtab-today" onclick="setView('today')">day</button>
+    <button class="vtab" id="vtab-planning" onclick="setView('planning')">week</button>
+    <button class="vtab" id="vtab-month" onclick="setView('month')">month</button>
+    <button class="vtab" id="vtab-notes" onclick="setView('notes')">notes</button>
+    <button class="vtab" id="vtab-more" onclick="setView('more')">more</button>
+    <button class="vtab gearbtn" title="appearance settings" onclick="toggleSettingsPanel()">⚙</button>
+    </div>
     </div>
   </div>
   <div id="settingsPanel" class="settingspanel" style="display:none">
     <div class="card">
       <header><span class="lbl">appearance</span><button class="btn tiny ghost" onclick="toggleSettingsPanel()">✕ close</button></header>
-      <div class="lbl" style="margin-bottom:8px;color:var(--ink-3)">quick themes</div>
-      <div class="presetthemesrow" id="presetThemesRow"></div>
-      <div class="themerow" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
-        <label>mode</label>
-        <button class="btn tiny ghost" id="th-mode-light" onclick="setThemeMode('light')">☀ light</button>
-        <button class="btn tiny ghost" id="th-mode-dark" onclick="setThemeMode('dark')">☾ dark</button>
+      <div style="font-size:11px;color:var(--ink-3);line-height:1.7">
+        Prism Terminal is a single fixed palette. Every colour is a token on <code>S.theme</code>,
+        so a picker can be reattached here without touching the stylesheet.
       </div>
-      <div class="themerow">
-        <label>font</label>
-        <select id="th-font" onchange="setThemeFont(this.value)">
-          <option value="inter">Inter (default)</option>
-          <option value="serif">Georgia (serif)</option>
-          <option value="rounded">Trebuchet (rounded)</option>
-          <option value="system">System UI</option>
-          <option value="mono">Courier (monospace)</option>
-        </select>
-      </div>
-      <div id="advancedColors" class="collapsible cardcollapsed" style="margin-top:6px;padding-top:8px;border-top:1px solid var(--rule)">
-        <header onclick="toggleCardCollapse('advancedColors')"><span class="lbl">advanced / custom colors</span><span class="cardchev">▸</span></header>
-        <div class="themerow" style="margin-top:12px">
-          <label>background</label><input type="color" id="th-bgpage" onchange="setThemeColor('bgpage',this.value)">
-          <label>card background</label><input type="color" id="th-glass" onchange="setThemeColor('glass',this.value)">
-          <label>card background, strong</label><input type="color" id="th-glassStrong" onchange="setThemeColor('glassStrong',this.value)">
-        </div>
-        <div class="themerow">
-          <label>text</label><input type="color" id="th-ink" onchange="setThemeColor('ink',this.value)">
-          <label>text, secondary</label><input type="color" id="th-ink2" onchange="setThemeColor('ink2',this.value)">
-          <label>text, muted</label><input type="color" id="th-ink3" onchange="setThemeColor('ink3',this.value)">
-        </div>
-        <div class="themerow">
-          <label>accent 1 — strawberry</label><input type="color" id="th-pink" onchange="setThemeColor('pink',this.value)">
-          <label>accent 1, deep</label><input type="color" id="th-pinkDeep" onchange="setThemeColor('pinkDeep',this.value)">
-        </div>
-        <div class="themerow">
-          <label>accent 2 — matcha</label><input type="color" id="th-mint" onchange="setThemeColor('mint',this.value)">
-          <label>accent 2, deep</label><input type="color" id="th-mintDeep" onchange="setThemeColor('mintDeep',this.value)">
-        </div>
-        <div class="themerow">
-          <label>accent 3 — blue</label><input type="color" id="th-hueBlue" onchange="setThemeColor('hueBlue',this.value)">
-          <label>accent 3, deep</label><input type="color" id="th-hueBlueDeep" onchange="setThemeColor('hueBlueDeep',this.value)">
-        </div>
-        <div class="themerow">
-          <label>accent 4 — violet</label><input type="color" id="th-hueViolet" onchange="setThemeColor('hueViolet',this.value)">
-          <label>accent 4, deep</label><input type="color" id="th-hueVioletDeep" onchange="setThemeColor('hueVioletDeep',this.value)">
-        </div>
-        <div class="themerow">
-          <label>accent 5 — yellow</label><input type="color" id="th-hueYellow" onchange="setThemeColor('hueYellow',this.value)">
-          <label>accent 5, deep</label><input type="color" id="th-hueYellowDeep" onchange="setThemeColor('hueYellowDeep',this.value)">
-        </div>
-        <div class="themerow">
-          <label>hero gradient</label><input type="color" id="th-gradA1" onchange="setThemeColor('gradA1',this.value)">
-          <input type="color" id="th-gradA2" onchange="setThemeColor('gradA2',this.value)">
-        </div>
-        <div class="themerow">
-          <label>hero gradient 2</label><input type="color" id="th-gradB1" onchange="setThemeColor('gradB1',this.value)">
-          <input type="color" id="th-gradB2" onchange="setThemeColor('gradB2',this.value)">
-        </div>
-        <button class="btn tiny ghost" onclick="resetTheme()">reset to defaults</button>
-      </div>
-      <div class="themerow" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
-        <label>save as theme</label>
-        <input type="text" id="th-saveName" placeholder="theme name" maxlength="30" style="border:1px solid var(--stroke);border-radius:8px;padding:5px 8px;background:var(--glass);font-size:12px;flex:1;min-width:100px"
-          onkeydown="if(event.key==='Enter'){saveCurrentTheme(this.value);this.value=''}">
-        <button class="btn tiny soft" onclick="saveCurrentTheme(document.getElementById('th-saveName').value);document.getElementById('th-saveName').value=''">save</button>
-      </div>
-      <div class="themerow" id="savedThemesRow" style="flex-direction:column;align-items:stretch;gap:6px"></div>
     </div>
   </div>
   <div id="offTodayBar" style="display:none"></div>
@@ -124,7 +65,7 @@
   <div id="todayView">
   <div class="grid">
     <div class="col" id="todayColA" ondragover="event.preventDefault()" ondrop="onColDrop(event,0)">
-      <div class="card compact" id="waterCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'waterCard')">
+      <div class="card" id="waterCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'waterCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'waterCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('waterCard')"><span class="lbl">water</span><span class="sub" id="waterHint"></span><span class="cardchev">▾</span></header>
         <div class="waterline">
           <div class="waterbar" id="waterBar" onclick="cupClick()" title="tap = half a cup, double-tap = a full cup">
@@ -149,7 +90,7 @@
         <header draggable="true" ondragstart="onCardDragStart(event,'habitStreakCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('habitStreakCard')"><span class="lbl">habit streaks</span><span class="cardchev">▾</span></header>
         <div id="habitStreakRows"></div>
       </div>
-      <div class="card hero" id="meditationCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'meditationCard')">
+      <div class="card" id="meditationCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'meditationCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'meditationCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('meditationCard')"><span class="lbl">meditation</span><span class="sub" id="mediCount"></span><span class="cardchev">▾</span></header>
         <div class="meditabs">
           <button class="mtab on" id="mtab-countdown" onclick="setMediMode('countdown')">countdown</button>
@@ -180,9 +121,9 @@
         </div>
         <div class="sub" style="font-size:11px;color:var(--ink-3);margin-top:8px" id="mediWk"></div>
       </div>
-      <div class="card hero" id="bookshelfCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'bookshelfCard')">
+      <div class="card" id="bookshelfCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'bookshelfCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'bookshelfCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('bookshelfCard')"><span class="lbl">bookshelf</span><span class="sub" id="pagesWk"></span><button class="btn tiny ghost" onclick="event.stopPropagation();undoBook()">undo</button><span class="cardchev">▾</span></header>
-        <div id="bookList" style="max-height:180px;overflow-y:auto"></div>
+        <div id="bookList"></div>
         <div class="addrow">
           <input id="newBookTitle" placeholder="book title" maxlength="48" style="flex:2">
           <input id="newBookPages" placeholder="pages" type="number" min="1" style="flex:0 0 60px;text-align:center">
@@ -194,14 +135,11 @@
           <div class="chart" id="readChart"></div>
           <div class="clbls" id="readLbls"></div>
         </div>
-        <div class="statring" style="margin:12px auto 6px">
-          <svg viewBox="0 0 100 100" class="pring">
-            <circle class="pring-track" cx="50" cy="50" r="40"></circle>
-            <circle class="pring-fill" id="readGoalRing" cx="50" cy="50" r="40"></circle>
-          </svg>
-          <div class="pringtext" id="readGoalN"></div>
+        <div class="hbar" style="margin-top:12px;margin-bottom:6px">
+          <div class="bar aqua"><div class="fill" id="readGoalFill" style="width:0%"></div></div>
+          <span class="n" id="readGoalN"></span>
         </div>
-        <div class="sub" style="font-size:11px;color:var(--ink-3);text-align:center">weekly reading goal
+        <div class="sub" style="font-size:11px;color:var(--ink-3)">weekly reading goal
           <button class="btn tiny ghost" style="font-size:11px" onclick="toggleEdit('readGoal')" id="readGoalBtn">150 pages</button>
         </div>
         <div id="readGoalEditBox"></div>
@@ -228,12 +166,11 @@
       </div>
     </div>
     <div class="col" id="todayColB" ondragover="event.preventDefault()" ondrop="onColDrop(event,1)">
-      <div class="card blockhost hero" id="card-day" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'card-day')">
-        <header draggable="true" ondragstart="onCardDragStart(event,'card-day')" ondragend="onCardDragEnd(event)"><span class="lbl">day shift</span><span class="sub" id="cnt-day"></span>
-          <button class="btn tiny soft" style="margin-left:8px" onclick="event.stopPropagation();quickCreateBlock()" title="new block, right now">+</button></header>
+      <div class="card" id="card-day" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'card-day')">
+        <header draggable="true" ondragstart="onCardDragStart(event,'card-day')" ondragend="onCardDragEnd(event)"><span class="lbl">day shift</span><span class="sub" id="cnt-day"></span></header>
         <div class="timeline" id="timeline"></div>
-        <div id="blockDetailPanel" class="blockdetail" style="display:none"></div>
       </div>
+      <div id="blockDetailPanel" class="blockdetail" style="display:none"></div>
       <div id="focusOverlay" class="focusoverlay" style="display:none"></div>
       <div class="card" id="intentionsCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'intentionsCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'intentionsCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('intentionsCard')"><span class="lbl">intentions for tomorrow</span><span class="cardchev">▾</span></header>
@@ -260,7 +197,7 @@
         </div>
         <div class="sub" style="font-size:11px;color:var(--ink-3);margin-top:6px">drag any task here to send it to your side quests</div>
       </div>
-      <div class="card compact" id="papersCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'papersCard')">
+      <div class="card" id="papersCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'papersCard')">
         <header draggable="true" ondragstart="onCardDragStart(event,'papersCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('papersCard')"><span class="lbl">papers</span><span class="sub" id="papersCnt"></span><span class="cardchev">▾</span></header>
         <div id="paperList"></div>
         <div class="addstack">
@@ -269,21 +206,10 @@
           <button class="btn tiny soft" onclick="addPaperFromForm()">add paper</button>
         </div>
       </div>
-      <div class="card compact" id="treatsCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'treatsCard')">
-        <header draggable="true" ondragstart="onCardDragStart(event,'treatsCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('treatsCard')"><span class="lbl">treats</span><span class="cardchev">▾</span></header>
-        <div class="moneyline"><span class="pv" id="bankV">$0.00</span><span class="pl" id="bankLbl">saved up</span></div>
-        <div class="weekline" id="weekLine">this week so far: <b id="weekV">$0.00</b></div>
-        <div class="weekbar"><div class="weekbarfill" id="weekBarFill" style="width:0%"></div><div class="weekbartarget" id="weekBarTarget"></div></div>
-        <div id="treatList"></div>
-        <div class="addrow">
-          <input id="newTreatName" placeholder="a treat to earn" maxlength="36" style="flex:2">
-          <input id="newTreatCost" placeholder="pts" type="number" min="10" step="10" style="flex:0 0 56px;text-align:center">
-          <button class="btn tiny soft" onclick="addTreat()">add</button>
-        </div>
-        <div class="redeemed-line" id="redeemedLine"></div>
-      </div>
-      <div class="card compact" id="spendCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'spendCard')">
-        <header draggable="true" ondragstart="onCardDragStart(event,'spendCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('spendCard')"><span class="lbl">spending log</span><span class="sub">unnecessary spends make a deficit or savings</span><span class="cardchev">▾</span></header>
+      <div class="card" id="spendCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'spendCard')">
+        <header draggable="true" ondragstart="onCardDragStart(event,'spendCard')" ondragend="onCardDragEnd(event)" onclick="toggleCardCollapse('spendCard')"><span class="lbl">spending</span><span class="sub">real purchases against a monthly budget</span><span class="cardchev">▾</span></header>
+        <div class="moneyline"><span class="pv" id="budgetV">$0.00</span><span class="pl" id="budgetLbl">spent this period</span></div>
+        <div class="weekbar"><div class="weekbarfill" id="budgetBarFill" style="width:0%"></div></div>
         <div id="spendList"></div>
         <div class="addrow">
           <input id="spendName" placeholder="what did you buy?" maxlength="60" style="flex:2">
@@ -356,17 +282,14 @@
   <!-- MONTH VIEW -->
   <div id="monthView" style="display:none;max-width:720px;margin:0 auto">
     <div class="card">
-      <header>
-        <button class="navbtn" onclick="shiftMonth(-1)" aria-label="previous month">‹</button>
-        <span class="lbl" id="monthLbl" style="flex:1;text-align:center">this month</span>
-        <button class="navbtn" id="monthNextBtn" onclick="shiftMonth(1)" aria-label="next month">›</button>
-      </header>
+      <header><span class="lbl" id="monthLbl">this month</span></header>
       <div class="metricrow" id="monthMetrics"></div>
-      <div class="lbl" style="margin-bottom:8px">habit completion</div>
+      <div class="lbl" style="margin-bottom:8px">day score</div>
       <div class="hdow" style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:4px">
         <span>s</span><span>m</span><span>t</span><span>w</span><span>t</span><span>f</span><span>s</span>
       </div>
-      <div class="heatmap" id="heatmap"></div>
+      <div class="scoregrid" id="scoreGrid"></div>
+      <div class="scorelegend"><span>ring = day score</span><span style="color:var(--pink-deep)">amber = deadline</span></div>
     </div>
     <div class="card" style="margin-top:18px">
       <header><span class="lbl">exercise, last 6 weeks</span></header>
@@ -378,18 +301,16 @@
     </div>
   </div>
   <!-- NOTES VIEW -->
-  <div id="notesView" style="display:none">
-    <div class="notesgrid">
-      <div class="card">
-        <header><span class="lbl">this week</span><span class="sub" id="notesRange"></span></header>
-        <div class="lbl" style="margin-bottom:8px">week note</div>
-        <textarea class="weeknote" id="weekNoteIn" placeholder="anything that belongs to the week as a whole…"
-          onchange="setWeekNote(this.value)"></textarea>
-      </div>
-      <div class="card">
-        <header><span class="lbl">from your blocks</span><span class="sub" id="notesCnt"></span></header>
-        <div id="notesBody"></div>
-      </div>
+  <div id="notesView" style="display:none;max-width:820px;margin:0 auto">
+    <div class="card">
+      <header><span class="lbl">this week</span><span class="sub" id="notesRange"></span></header>
+      <div class="lbl" style="margin-bottom:8px">week note</div>
+      <textarea class="weeknote" id="weekNoteIn" placeholder="anything that belongs to the week as a whole…"
+        onchange="setWeekNote(this.value)"></textarea>
+    </div>
+    <div class="card" style="margin-top:18px">
+      <header><span class="lbl">from your blocks</span><span class="sub" id="notesCnt"></span></header>
+      <div id="notesBody"></div>
     </div>
   </div>
   <div class="footnote">
@@ -406,13 +327,19 @@
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="onImportFile(event)">
   </div>
 </div>
+<!-- Four terminal tabs, driving the same setView() router as the desktop strip. `notes` and
+     `more` have no tab of their own on the phone: their cards live under BIO and GRID. -->
 <nav class="mobilenav" id="mobileNav">
-  <button class="mtabb" id="btab-today" onclick="setView('today')"><b>▦</b>today</button>
-  <button class="mtabb" id="btab-planning" onclick="setView('planning')"><b>▤</b>week</button>
-  <button class="mtabb" id="btab-month" onclick="setView('month')"><b>▩</b>month</button>
-  <button class="mtabb" id="btab-notes" onclick="setView('notes')"><b>✎</b>notes</button>
-  <button class="mtabb" id="btab-more" onclick="setView('more')"><b>⋯</b>more</button>
+  <button class="mtabb" id="btab-today" onclick="setView('today')"><b>◉</b>scan</button>
+  <button class="mtabb" id="btab-planning" onclick="setView('planning')"><b>≡</b>tasks</button>
+  <button class="mtabb" id="btab-more" onclick="setView('more')"><b>♥</b>bio</button>
+  <button class="mtabb" id="btab-month" onclick="setView('month')"><b>▦</b>grid</button>
 </nav>
+<div id="sheetScrim" onclick="closeSheet()"></div>
+<div class="pssheet" id="sheetMoney"></div>
+<div class="pssheet" id="sheetWater"></div>
+<div class="pssheet" id="sheetFood"></div>
+<div class="pssheet" id="sheetNotes"></div>
 <script src="app.js"></script>
 </body>
 </html>

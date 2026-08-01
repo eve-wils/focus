@@ -1,116 +1,65 @@
 /* ===================== config ===================== */
-const ROLLOVER=4, WATER_GOAL=100, FREEZE_AT=120, MAX_FREEZE=3;
+const ROLLOVER=4, FREEZE_AT=120, MAX_FREEZE=3;
+/* the daily water goal is S.waterGoal (editable) — read it through waterGoal() for "the goal
+   now" or goalOn(dayKey) for "the goal that applied on that day". It was a const until v:5. */
 const DAY_START=360, DAY_END=1320; /* 6:00am – 10:00pm skeleton */
 /* ---------- fixed proportional grid (Google-Calendar-style timeline) ----------
    Replaces the earlier elastic/floor-ceiling sizing: every block's on-screen height is now a
    true function of its clock duration, same rate for all of them, so 8am really is twice as far
    from 6am as 7am is. "Compact" per the ask that replaced elastic sizing — 0.95px/minute keeps
    the full 6am-10pm day under 920px instead of a full 1:1 minute-per-pixel sprawl.
-   On a phone that's still taller than the screen has room for even with today's past-folding —
-   so phone widths get a smaller ratio instead, computed live (not a frozen const) so it tracks
-   orientation changes. Every consumer goes through gridPxPerMin() rather than a fixed number. */
+   On a phone that's still taller than the screen has room for, forcing a scroll through the
+   card just to see the whole day — so phone widths get a smaller ratio instead, computed live
+   (not a frozen const) so it tracks orientation changes. Every consumer of the ratio goes
+   through gridPxPerMin()/gridTotalPx() rather than reading a fixed number directly. */
 function gridPxPerMin(){ return (typeof window!=='undefined'&&window.innerWidth<=760)?0.5:0.95; }
-/* origin defaults to the full day (DAY_START) but the "live" grid for today passes its own
-   origin — see renderTimeline — so folded-past time doesn't cost any vertical space */
-function minToPx(min,origin){ origin=(origin===undefined)?DAY_START:origin; return Math.round((min-origin)*gridPxPerMin()); }
-function pxToMin(px,origin){ origin=(origin===undefined)?DAY_START:origin; return origin+Math.round(px/gridPxPerMin()); }
-/* the click/drag snap increment on the calendar */
-function snap15(min){ return Math.round(min/15)*15; }
+function gridTotalPx(){ return Math.round((DAY_END-DAY_START)*gridPxPerMin()); }
+function minToPx(min){ return Math.round((min-DAY_START)*gridPxPerMin()); }
 const DEFAULT_CATEGORIES=['home','research','admin','self-care','hobbies','school'];
-/* appearance: background/card/text + the app's two accent families (strawberry, matcha), plus
-   a small curated set of font stacks — free-text font input isn't offered since a bad value
-   would just silently fall back to the browser default with no feedback */
-/* full repaint — the old strawberry-cream/matcha default replaced with a warm-cream "citrus
-   neutral" base so the app's own baseline look stops reading as "pink app" before anyone even
-   opens the theme picker */
-const DEFAULT_THEME={mode:'light', bgpage:'#F7F1E8', glass:'#FFFFFF', glassStrong:'#FBF7F0',
-  ink:'#231F1A', ink2:'#6E6459', ink3:'#A79C8C', stroke:'rgba(35,31,26,.14)', rule:'rgba(35,31,26,.08)',
-  pink:'#FFB4A8', pinkDeep:'#E85D4A', mint:'#A8E0C8', mintDeep:'#2E9E72', fontKey:'inter',
-  hueBlue:'#A8CDEE', hueBlueDeep:'#4A85C4', hueViolet:'#D3BFF0', hueVioletDeep:'#8B5FD1',
-  hueYellow:'#FFE29A', hueYellowDeep:'#E0A72A', gradA1:'#FFB4A8', gradA2:'#A8CDEE',
-  gradB1:'#A8E0C8', gradB2:'#FFE29A'};
-/* dark mode is its own curated preset (not a computed inverse of the light one) so contrast and
-   accent saturation can be tuned by hand rather than relying on a naive color-flip — a cooler
-   "slate" dark instead of the old pink-tinted dark */
-const DEFAULT_DARK_THEME={mode:'dark', bgpage:'#14151A', glass:'#1E2028', glassStrong:'#282A34',
-  ink:'#F1F1F4', ink2:'#9A9CA8', ink3:'#5A5C68', stroke:'rgba(255,255,255,.12)', rule:'rgba(255,255,255,.06)',
-  pink:'#4A2E38', pinkDeep:'#E8637E', mint:'#1F3D33', mintDeep:'#3ECF9A', fontKey:'inter',
-  hueBlue:'#25344A', hueBlueDeep:'#5B9BE8', hueViolet:'#332A47', hueVioletDeep:'#A47FE8',
-  hueYellow:'#3D3520', hueYellowDeep:'#E8C24A', gradA1:'#1F2733', gradA2:'#241E2E',
-  gradB1:'#241E28', gradB2:'#1E2620'};
-/* real webfonts (loaded in index.html's <head>) instead of the old OS-font-fallback stacks —
-   most people don't have Inter/Trebuchet actually installed, so those used to silently fall back
-   to whatever generic sans/serif the OS shipped; each of these five now has real character */
+/* ===== appearance =====
+   Prism Terminal is the app's look: one fixed dark phosphor palette, not a theme among several.
+   The five presets, the light/dark toggle and the saved-theme snapshots were retired with the
+   redesign — but the palette is still *data*, not literals. S.theme holds every colour, the CSS
+   in styles.css references only custom properties, and applyTheme() pushes the one onto the
+   other. Re-adding a colour picker later means building UI over the object below; it does not
+   mean going back through the stylesheet. */
+const DEFAULT_THEME={mode:'dark',
+  bgpage:'#060a07', glass:'#0b120d', glassStrong:'#12200f',
+  ink:'#c9ffd9', ink2:'#a9cfb5', ink3:'#4a7a55',
+  stroke:'#1d3323', rule:'#12200f',
+  /* accent 1 — amber: deadlines, priority, budget */
+  pink:'rgba(232,163,61,.15)', pinkDeep:'#e8a33d',
+  /* accent 2 — phosphor green: primary, active, ok */
+  mint:'rgba(125,250,160,.14)', mintDeep:'#7dfaa0',
+  /* teal, used for water and secondary bars */
+  aqua:'rgba(79,214,168,.14)', aquaDeep:'#4fd6a8',
+  alert:'#e05c4a',
+  radius:'0px', fontKey:'mono'};
 const FONT_STACKS={
-  inter:"'Inter','Helvetica Neue',Helvetica,Arial,sans-serif",
-  serif:"'Fraunces',Georgia,'Times New Roman',serif",
-  rounded:"'Quicksand','Trebuchet MS',Verdana,sans-serif",
-  system:"'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif",
-  mono:"'Space Mono','Courier New',ui-monospace,monospace"
+  mono:"'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace",
+  system:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
 };
-/* five one-tap presets, same shape as DEFAULT_THEME/DEFAULT_DARK_THEME — picking one just replaces
-   S.theme wholesale (see applyPresetTheme), same as switching light/dark mode does. Anyone can still
-   hand-tune from there and save their own on top via saveCurrentTheme. */
-const PRESET_THEMES=[
-  {id:'citrus', name:'citrus pop', mode:'light', bgpage:'#FFF8E7', glass:'#FFFFFF', glassStrong:'#FFFBF0',
-    ink:'#2B2110', ink2:'#8A7A54', ink3:'#D9C99A', stroke:'rgba(43,33,16,.16)', rule:'rgba(43,33,16,.09)',
-    pink:'#FF9EC4', pinkDeep:'#FF3E96', mint:'#C8F27A', mintDeep:'#8FCC1F', fontKey:'rounded',
-    hueBlue:'#8FD9F2', hueBlueDeep:'#1FAEDB', hueViolet:'#D9A8F2', hueVioletDeep:'#B24FE0',
-    hueYellow:'#FFD166', hueYellowDeep:'#F2A800', gradA1:'#FF9EC4', gradA2:'#FFD166',
-    gradB1:'#C8F27A', gradB2:'#8FD9F2'},
-  {id:'lavenderfog', name:'lavender fog', mode:'light', bgpage:'#F1EEF7', glass:'#FFFFFF', glassStrong:'#F8F6FB',
-    ink:'#2E2A3D', ink2:'#7A7390', ink3:'#C2BCD4', stroke:'rgba(46,42,61,.14)', rule:'rgba(46,42,61,.08)',
-    pink:'#E8B8D4', pinkDeep:'#C36FA0', mint:'#B8CFE0', mintDeep:'#5C8CAD', fontKey:'serif',
-    hueBlue:'#B0B8E8', hueBlueDeep:'#6670C4', hueViolet:'#C9B0E8', hueVioletDeep:'#8A5FC7',
-    hueYellow:'#E8D9B0', hueYellowDeep:'#B89A4F', gradA1:'#E8B8D4', gradA2:'#B0B8E8',
-    gradB1:'#C9B0E8', gradB2:'#B8CFE0'},
-  {id:'terracotta', name:'terracotta', mode:'light', bgpage:'#FBEDE2', glass:'#FFFDF9', glassStrong:'#F7E9DC',
-    ink:'#3D2418', ink2:'#8C6A52', ink3:'#D4B69E', stroke:'rgba(61,36,24,.16)', rule:'rgba(61,36,24,.09)',
-    pink:'#E8967A', pinkDeep:'#C1512E', mint:'#A8C49A', mintDeep:'#5F8A4C', fontKey:'serif',
-    hueBlue:'#8FBBC7', hueBlueDeep:'#3E7E92', hueViolet:'#C4A8B8', hueVioletDeep:'#8A5470',
-    hueYellow:'#E8C67A', hueYellowDeep:'#C4941F', gradA1:'#E8967A', gradA2:'#E8C67A',
-    gradB1:'#A8C49A', gradB2:'#8FBBC7'},
-  {id:'neon', name:'midnight neon', mode:'dark', bgpage:'#0A0E17', glass:'#131826', glassStrong:'#1C2233',
-    ink:'#E8F4FF', ink2:'#8FA3C4', ink3:'#4A5670', stroke:'rgba(255,255,255,.14)', rule:'rgba(255,255,255,.07)',
-    pink:'#3D1A38', pinkDeep:'#FF2E9C', mint:'#123D38', mintDeep:'#00E5B8', fontKey:'system',
-    hueBlue:'#1A2A4A', hueBlueDeep:'#3E7EFF', hueViolet:'#2A1A4A', hueVioletDeep:'#9D4EFF',
-    hueYellow:'#3A331A', hueYellowDeep:'#FFE500', gradA1:'#FF2E9C', gradA2:'#3E7EFF',
-    gradB1:'#00E5B8', gradB2:'#9D4EFF'},
-  {id:'foresttrail', name:'forest trail', mode:'light', bgpage:'#EEF2E4', glass:'#FBFCF7', glassStrong:'#F1F5E8',
-    ink:'#1F2E1A', ink2:'#5C6E52', ink3:'#A3B598', stroke:'rgba(31,46,26,.15)', rule:'rgba(31,46,26,.08)',
-    pink:'#E0A87A', pinkDeep:'#B8722E', mint:'#A0C48A', mintDeep:'#4F8A38', fontKey:'serif',
-    hueBlue:'#8FBFCC', hueBlueDeep:'#3E8598', hueViolet:'#C4B0D4', hueVioletDeep:'#8A64A8',
-    hueYellow:'#E0D084', hueYellowDeep:'#B89A1F', gradA1:'#A0C48A', gradA2:'#8FBFCC',
-    gradB1:'#E0A87A', gradB2:'#E0D084'},
-  /* the "vivid cards floating on near-black" look from the dashboard-style inspiration — an
-     opt-in preset, not a DEFAULT_DARK_THEME replacement, since it's a much more saturated,
-     higher-contrast-per-surface aesthetic than the quiet default dark mode should commit to */
-  {id:'aurora', name:'aurora glow', mode:'dark', bgpage:'#0E0F13', glass:'#1A1B22', glassStrong:'#242530',
-    ink:'#F5F5F7', ink2:'#9A9BA3', ink3:'#5C5D66', stroke:'rgba(255,255,255,.12)', rule:'rgba(255,255,255,.06)',
-    pink:'#FF6FA8', pinkDeep:'#FF3D82', mint:'#5CE6B0', mintDeep:'#22C48C', fontKey:'inter',
-    hueBlue:'#5B8DEF', hueBlueDeep:'#2F65D6', hueViolet:'#B37FEA', hueVioletDeep:'#8A4FD1',
-    hueYellow:'#FFD166', hueYellowDeep:'#F2A900', gradA1:'#FF8A5B', gradA2:'#7B6FEA',
-    gradB1:'#FF6FA8', gradB2:'#5B8DEF'}
-];
+/* block categories — the one colour set that is keyed by meaning rather than by accent slot */
+const CAT_COLORS={home:'#9b7fd4', work:'#7dfaa0', meeting:'#e8a33d', reading:'#4fd6a8', social:'#d4736f'};
 /* default card order per column, across BOTH the today view (cols 0-2: todayColA/B/C) and the
    more view (cols 3-5: moreColA/B/C) — ids match each card's actual DOM id. Water lives in the
    header now (see waterHeader). Today keeps habit streaks, the calendar, the inbox (tasks
    assigned to today from the planning tab), and side quests; everything else (meditation,
-   bookshelf, movement, intentions, papers, treats, spending) lives in the more tab. Any id
+   bookshelf, movement, intentions, papers, spending) lives in the more tab. Any id
    dropped from this list is also dropped from a saved layout by backfillLayout, which is how
    the retired sunrise/moonlight panels (and card moves like this one) clear themselves out of
    existing users' columns. */
 const CARD_COL_IDS=['todayColA','todayColB','todayColC', 'weekColA', 'weekColB', 'weekColC', 'moreColA','moreColB','moreColC'];
 const DEFAULT_LAYOUT_COLS=[
-  ['habitStreakCard'],
   ['card-day'],
-  ['todayTasksCard','questCard'],
+  ['todayTasksCard'],
+  ['questCard'],
   ['taskBankCard'],
   ['weekPlanCard'],
   ['futureLogCard'],
-  ['meditationCard','movementCard'],
-  ['bookshelfCard','treatsCard'],
-  ['waterCard','papersCard','spendCard']
+  ['habitStreakCard','waterCard','meditationCard'],
+  ['bookshelfCard','movementCard'],
+  ['papersCard','spendCard']
 ];
 const CAL_TOOL='mcp__b11aad2b-1f8f-4672-9e75-3d83a6b8e73f__list_events';
 const ITEMS=[
@@ -138,15 +87,11 @@ const DEFAULT_QUESTS=[
   {id:'laundry',name:'Laundry',        cat:'home'},
   {id:'outfit', name:'Pick tomorrow’s outfit', cat:'admin'},
 ];
-/* points expressed directly in cents, real-money value. Rebalanced so a fully-completed day of
-   rituals + quests + water alone (no bonus tasks) lands well under the cost of the cheapest treat
-   ($2.50 coffee) — it should take roughly 3 solid days to earn a coffee out, with task/block/pomo
-   completions as the main path to bigger treats. */
-const CENTS={med:3, core:5, quest:8, custom:8, waterGoal:21, seal:17, pomo:3, blockClear:8, move:8, pages:5};
-/* cumulative reward for reaching each paper status, indexed to PAPER_STATUSES below */
-const PAPER_STATUS_CENTS=[0, 15, 50, 110];
-/* weekly earning guardrails: $20/wk should be easy with consistent habits, $100/wk is a hard ceiling */
-const WEEKLY_TARGET_CENTS=2000, WEEKLY_CAP_CENTS=10000;
+/* The points/cents economy that used to live here (CENTS payout table, weekly earn cap, paper
+   status payouts, treats, the pay-as-you-go ledger) was removed in v:5. Completing something now
+   simply completes it — there is no currency to keep in sync, and therefore no way for an edit,
+   a delete or an un-complete to leave the balance wrong. Historical `cents`/`ptsEarned` values
+   are left untouched in stored state; nothing reads them. */
 const STUDIO_CHECKLIST=['yoga mat','music','hairtie'];
 const OUTDOOR_CHECKLIST=['get dressed','put on shoes','fill water','grab headphones'];
 const ACTS=[
@@ -158,33 +103,23 @@ const ACTS=[
   {id:'hike', name:'hike', checklist:OUTDOOR_CHECKLIST}
 ];
 const BOOK_COLORS=['#A48DE8','#F09CC0','#7FB8DC','#F5CE58','#8ED0A0','#E88DA4'];
-/* the 5-hue accent set (set by applyTheme() from S.theme) shared by calendar blocks, task/project
-   category chips, and priority pills — one hash function, one palette, so the same category or
-   block type always reads as the same color everywhere it shows up, not just decoratively varied. */
-const CATEGORY_PALETTE=[
-  {bg:'var(--blue)', edge:'var(--blue-deep)'},
-  {bg:'var(--mint)', edge:'var(--mint-deep)'},
-  {bg:'var(--violet)', edge:'var(--violet-deep)'},
-  {bg:'var(--pink)', edge:'var(--pink-deep)'},
-  {bg:'var(--yellow)', edge:'var(--yellow-deep)'}
+/* matcha ↔ strawberry: alternating soft green and pink block fills with a deeper edge/accent */
+/* Block fills are a translucent wash of the edge colour rather than an opaque pastel: on the
+   terminal's black page an opaque light fill would need dark text, which fights every other label
+   on screen. A wash keeps the page's own text colour readable straight through it. */
+const BLOCK_PALETTE=[
+  {bg:'rgba(125,250,160,.13)', edge:'#7dfaa0'},  /* work — green */
+  {bg:'rgba(155,127,212,.15)', edge:'#9b7fd4'},  /* home — violet */
+  {bg:'rgba(232,163,61,.14)',  edge:'#e8a33d'},  /* meeting — amber */
+  {bg:'rgba(79,214,168,.13)',  edge:'#4fd6a8'},  /* reading — teal */
+  {bg:'rgba(212,115,111,.14)', edge:'#d4736f'},  /* social — clay */
+  {bg:'rgba(125,250,160,.07)', edge:'#3b6b47'}   /* muted green */
 ];
 function blockHash(id){ let h=0; for(let i=0;i<String(id).length;i++){ h=(h*31+String(id).charCodeAt(i))>>>0; } return h; }
-function categoryColor(name){ return CATEGORY_PALETTE[blockHash(String(name))%CATEGORY_PALETTE.length]; }
-/* block color is now information-bearing, not a decorative hash-of-id alternation: ritual blocks
-   are always violet, an open-ended block is always yellow, a project block picks up its own
-   category's color (so the block and every chip for that category match), and a plain
-   single-focus block — the majority case, since category only exists on project blocks — is
-   the shared default blue. */
-function blockColor(b){
-  if(b.type==='ritual') return CATEGORY_PALETTE[2];
-  if(b.type==='project'&&b.category) return categoryColor(b.category);
-  if(b.type==='open') return CATEGORY_PALETTE[4];
-  return CATEGORY_PALETTE[0];
-}
+function blockColor(b){ return BLOCK_PALETTE[blockHash(b.id)%BLOCK_PALETTE.length]; }
 const PX_PER_MIN=1.25; /* the calendar is spatially honest: 1 hour ≈ 75px of height */
-const DEFAULT_TREATS=[
-  {id:'t1',name:'Coffee out',points:250},{id:'t2',name:'Skein of yarn',points:400},
-  {id:'t3',name:'A new book',points:900},{id:'t4',name:'Dinner out',points:2000}];
+/* real-money spending categories for the budget tracker (S.txnCats) — user-extendable at runtime */
+const DEFAULT_TXN_CATS=['Groceries','Dining','Transport','Supplies','Other'];
 const DEFAULT_AFFIRM=[
   'When mindfulness embraces those we love, they will bloom like flowers. — Thich Nhat Hanh',
   'If our love is only a will to possess, it is not love. — Thich Nhat Hanh',
@@ -196,11 +131,10 @@ const DEFAULT_AFFIRM=[
   'Accept the things to which fate binds you, and love the people with whom fate brings you together, but do so with all your heart. — Marcus Aurelius, Meditations'];
 /* ===================== state ===================== */
 const KEY='aura_v4'; const OLD_KEY='aura_v3'; let S=null;
-function blankState(){ return { v:4, lastDate:null, days:{},
+function blankState(){ return { v:5, lastDate:null, days:{},
   custom:[], removed:[], moves:{},
   vessels:[{name:'Everyday cup',oz:20},{name:'Big bottle',oz:32},{name:'Mug',oz:12}], vesselIdx:0,
-  cents:0, waterStreak:0, waterBest:0, freezes:0, frozenDays:[],
-  treats:DEFAULT_TREATS.map(function(t){return Object.assign({},t);}), redeemed:[],
+  waterStreak:0, waterBest:0, freezes:0, frozenDays:[], waterGoal:100,
   books:[], doneBooks:[],
   affirm:DEFAULT_AFFIRM.slice(), affirmIdx:{},
   tea:{}, moveGoal:150, readGoal:150,
@@ -208,12 +142,12 @@ function blankState(){ return { v:4, lastDate:null, days:{},
   workStart:'12:00', workHours:8, lastBackup:null,
   tasks:[], notionImportedAt:null, notionLinksRepairedAt:null, blockTasksMigratedAt:null,
   mediBestSec:0, papers:[],
-  spendLog:[], pointsRebalancedAt:Date.now(),
+  budget:{monthlyCents:0, startsOn:1}, txns:[], txnCats:DEFAULT_TXN_CATS.slice(),
   categories:DEFAULT_CATEGORIES.slice(),
   layout:{cols:DEFAULT_LAYOUT_COLS.map(function(c){return c.slice();}), collapsed:{}},
   theme:Object.assign({},DEFAULT_THEME),
   customActs:[], actTimers:{}, exMoves:[],
-  savedThemes:[], weekNotes:{},
+  weekNotes:{},
 }; }
 function migrateFromV3(old){
   const s=blankState();
@@ -221,16 +155,13 @@ function migrateFromV3(old){
    'books','doneBooks','affirm','affirmIdx','tea','moveGoal','quests','workStart','workHours','lastDate'].forEach(function(k){
     if(old[k]!==undefined) s[k]=old[k];
   });
-  s.cents=Math.round((old.pts||0)*2.5);
-  s.treats=(old.treats||[]).map(function(t){return {id:t.id,name:t.name,points:Math.round((t.cost||0)*2.5)||10};});
-  s.redeemed=old.redeemed||[];
   s.days={};
   Object.keys(old.days||{}).forEach(function(k){
     const od=old.days[k];
     s.days[k]={
       water:od.water||0, log:od.log||[], done:od.done||{}, ex:od.ex||{},
       pagesLogged:od.pagesLogged||0, pagesBy:od.pagesBy||{}, pomos:od.pomos||0,
-      qdone:{}, questAssign:{}, ptsEarned:0,
+      qdone:{}, questAssign:{}, goal:100, meals:[],
       blocks:(od.blocks||[]).map(function(b){
         return {id:b.id,start:b.start,end:b.end||fromMin(toMin(b.start)+60),focus:b.focus||'',
           tasks:(b.tasks||[]).map(function(t){return {t:t.t,done:!!t.done,elapsed:0,timerStart:null};}),
@@ -245,22 +176,68 @@ function migrateFromV3(old){
   });
   return s;
 }
-function backfillTreats(){
-  if(!S.treats) { S.treats=[]; return; }
-  S.treats=S.treats.map(function(t){
-    if(t.points!==undefined) return t;
-    if(t.dollars!==undefined) return {id:t.id,name:t.name,points:Math.round(t.dollars*100)};
-    return {id:t.id,name:t.name,points:100};
-  });
-}
 function backfillAffirm(){
   if(!S.affirm||!S.affirm.length||!S.affirm.some(function(x){return x.indexOf(' — ')>=0;})){
     S.affirm=DEFAULT_AFFIRM.slice(); S.affirmIdx={};
   }
 }
-function backfillSpendLog(){
-  if(!S.spendLog) { S.spendLog=[]; return; }
-  S.spendLog.forEach(function(s){ if(!s.day) s.day=dayKeyOf(new Date(s.at||Date.now())); });
+/* v:5 — the old spendLog was real purchases charged against the points balance. The points half
+   is gone; the purchases are not, and they already have the shape the budget tracker wants, so
+   they become the seed for S.txns rather than being thrown away. `balanceAfter` is dropped (it
+   referred to a balance that no longer exists) and `amount` is renamed to `amountCents` to say
+   plainly what it holds. Runs once — after it, S.spendLog is left in place but unread. */
+function backfillTxns(){
+  if(!S.txns) S.txns=[];
+  if(!S.txnCats||!S.txnCats.length) S.txnCats=DEFAULT_TXN_CATS.slice();
+  if(!S.budget) S.budget={monthlyCents:0, startsOn:1};
+  if(S.budget.monthlyCents===undefined) S.budget.monthlyCents=0;
+  if(S.budget.startsOn===undefined) S.budget.startsOn=1;
+  if(S.txnsMigratedAt) return;
+  (S.spendLog||[]).forEach(function(s){
+    S.txns.push({id:s.id||('tx'+Date.now()+Math.random().toString(36).slice(2,7)),
+      name:s.name||'', amountCents:s.amount||0, cat:'Uncategorized',
+      day:s.day||dayKeyOf(new Date(s.at||Date.now())), at:s.at||Date.now()});
+  });
+  S.txns.sort(function(a,b){ return (b.at||0)-(a.at||0); });
+  if(S.txns.some(function(t){return t.cat==='Uncategorized';})&&S.txnCats.indexOf('Uncategorized')<0){
+    S.txnCats.push('Uncategorized');
+  }
+  S.txnsMigratedAt=Date.now();
+}
+/* v:5 — the water goal was a module const, so changing it would silently re-judge every past day's
+   streak. The goal in effect is now snapshotted onto each day record when the day is created;
+   dayCounts() reads that, never the live setting. Existing days are stamped with 100, the value
+   that was actually in force while they were being logged. */
+function backfillWaterGoal(){
+  if(!S.waterGoal) S.waterGoal=100;
+  Object.keys(S.days).forEach(function(k){
+    const d=S.days[k];
+    if(d.goal===undefined) d.goal=100;
+  });
+}
+/* v:5 — meals are the one tracker with nothing to migrate from; day-keyed for consistency with
+   water, so a meal belongs to the day it was eaten rather than to a global list. */
+function backfillMeals(){
+  Object.keys(S.days).forEach(function(k){
+    const d=S.days[k];
+    if(!d.meals) d.meals=[];
+  });
+}
+/* v:5 — the chronological personal log from the mock's notes sheet. Distinct from S.weekNotes,
+   which is block-scoped prose attached to a specific block on a specific day. */
+function backfillLogEntries(){
+  if(!S.logEntries) S.logEntries=[];
+}
+/* v:5 — rail pinning. `atMin` places a task at an exact clock minute outside any block; `metric`
+   is the display unit for a count-mode task ("pages", "plates"). Everything else the task tree
+   needs — parentId, subtaskIds, order, day, blockId, mode, targetN, doneN — makeUnit() has
+   created since the unified-item migration, so there is nothing else to add here. */
+function backfillPinning(){
+  (S.tasks||[]).forEach(function(t){
+    if(t.atMin===undefined) t.atMin=null;
+    if(t.pinned===undefined) t.pinned=false;
+    if(t.metric===undefined) t.metric='';
+  });
 }
 function backfillCategories(){ if(!S.categories||!S.categories.length) S.categories=DEFAULT_CATEGORIES.slice(); }
 /* the two fixed ritual blocks used to be a hardcoded const (ROUTINE_DEFS/RITUALS) — now they're
@@ -280,13 +257,10 @@ function addRitualDef(name,start,end){
   const rd={id:'ritual'+Date.now(), name:name, start:start||'12:00', end:end||'13:00'};
   S.ritualDefs.push(rd); save(); return rd;
 }
-/* the quick way to add a habit under morning or evening — no ritual-block creation UI, just
-   morning/evening always, per how you actually use this */
-function submitAddHabit(){
-  const nameEl=document.getElementById('newHabitName'), selEl=document.getElementById('newHabitRitual');
-  if(!nameEl||!nameEl.value.trim()) return;
-  const r=selEl&&selEl.value?selEl.value:((S.ritualDefs&&S.ritualDefs[0])?S.ritualDefs[0].id:null);
-  if(addRitualItem(r,nameEl.value)){ nameEl.value=''; render(); }
+function submitAddRitualDef(){
+  const nameEl=document.getElementById('newRitualName'), sEl=document.getElementById('newRitualStart'), eEl=document.getElementById('newRitualEnd');
+  if(!nameEl) return;
+  if(addRitualDef(nameEl.value, sEl&&sEl.value, eEl&&eEl.value)){ nameEl.value=''; render(); toast('Ritual block added — it seeds onto tomorrow’s calendar'); }
 }
 function delRitualDef(id,ev){
   if(ev) ev.stopPropagation();
@@ -334,14 +308,35 @@ function backfillLayout(){
      collapse toggle entirely, but a layout saved before then could still have collapsed:true
      stuck on it with no UI path left to undo that, so it's force-cleared here every load. */
   if(S.layout.collapsed['card-day']) delete S.layout.collapsed['card-day'];
-  /* the raw color-picker section in Settings defaults to collapsed (presets are the prominent
-     path); only seed this the first time so a user who's deliberately expanded it keeps that choice */
-  if(S.layout.collapsed.advancedColors===undefined) S.layout.collapsed.advancedColors=true;
+  relocateHabitCard();
 }
+/* v:5 — SCAN leads with the day now, not the habit grid. On the phone the columns stack, so
+   whatever sits in the first today-column is what you land on, and the mock puts the habit grid
+   under BIO. A saved layout keeps its own card order, so this move has to be applied once
+   explicitly rather than left to DEFAULT_LAYOUT_COLS. */
+function relocateHabitCard(){
+  if(S.habitCardMovedAt) return;
+  const TODAY_COLS=[0,1,2], BIO_COL=6;
+  TODAY_COLS.forEach(function(ci){
+    const col=S.layout.cols[ci]; if(!col) return;
+    const at=col.indexOf('habitStreakCard');
+    if(at>=0){
+      col.splice(at,1);
+      if(S.layout.cols[BIO_COL].indexOf('habitStreakCard')<0) S.layout.cols[BIO_COL].unshift('habitStreakCard');
+    }
+  });
+  /* moving the habit grid out left the third today-column empty on desktop, which reads as a
+     layout bug rather than as space. Spread what's left across the two free columns. */
+  if(!S.layout.cols[2].length&&S.layout.cols[1].length>1) S.layout.cols[2].push(S.layout.cols[1].pop());
+  S.habitCardMovedAt=Date.now();
+}
+/* v:5 — the redesign replaced the palette outright, so a theme saved under the old system is
+   dropped rather than merged: half-migrating it would leave light-mode pinks on a black page.
+   `terminal:true` marks a theme object as already converted, so this runs exactly once. */
 function backfillTheme(){
-  if(!S.theme) S.theme=Object.assign({},DEFAULT_THEME);
+  if(!S.theme||!S.theme.terminal) S.theme=Object.assign({},DEFAULT_THEME,{terminal:true});
   Object.keys(DEFAULT_THEME).forEach(function(k){ if(S.theme[k]===undefined) S.theme[k]=DEFAULT_THEME[k]; });
-  if(!S.savedThemes) S.savedThemes=[];
+  delete S.savedThemes;
 }
 function backfillWeekNotes(){ if(!S.weekNotes) S.weekNotes={}; }
 function backfillMovement(){
@@ -355,11 +350,12 @@ function backfillMovement(){
   });
 }
 /* pushes S.theme onto the actual CSS custom properties. Both accents cascade to every alias that
-   was folded into that accent family during the matcha/strawberry palette consolidation, so
-   changing "accent 1" recolors everything derived from strawberry in one go, same for matcha. */
+   was folded into that accent family during the palette consolidation, so changing "accent 1"
+   recolors everything derived from it in one go, same for accent 2. This is the single seam
+   between the palette-as-data and the stylesheet. */
 function applyTheme(){
   const t=S.theme, r=document.documentElement.style;
-  r.setProperty('color-scheme',t.mode==='dark'?'dark':'light');
+  r.setProperty('color-scheme','dark');
   r.setProperty('--bgpage',t.bgpage);
   r.setProperty('--glass',t.glass);
   r.setProperty('--glass-strong',t.glassStrong);
@@ -368,120 +364,21 @@ function applyTheme(){
   r.setProperty('--ink-3',t.ink3);
   r.setProperty('--stroke',t.stroke);
   r.setProperty('--rule',t.rule);
-  r.setProperty('--serif',FONT_STACKS[t.fontKey]||FONT_STACKS.inter);
+  r.setProperty('--alert',t.alert);
+  r.setProperty('--r',t.radius);
+  r.setProperty('--serif',FONT_STACKS[t.fontKey]||FONT_STACKS.mono);
   ['--pink','--lav','--peach'].forEach(function(v){ r.setProperty(v,t.pink); });
   ['--pink-deep','--lav-deep','--peach-deep'].forEach(function(v){ r.setProperty(v,t.pinkDeep); });
-  ['--mint','--aqua','--sun','--sky','--leaf','--water'].forEach(function(v){ r.setProperty(v,t.mint); });
-  ['--mint-deep','--aqua-deep','--sun-deep','--sky-deep','--leaf-deep','--water-deep'].forEach(function(v){ r.setProperty(v,t.mintDeep); });
-  /* 3 more saturated hues rounding the accent set out to 5 (plus pink/mint above) — || fallbacks
-     so a theme object saved before these keys existed (an old localStorage state, an imported
-     pre-refactor backup) degrades to a sane default instead of writing "undefined" into a CSS var */
-  r.setProperty('--blue',t.hueBlue||'#8FB8E0');
-  r.setProperty('--blue-deep',t.hueBlueDeep||'#4A7FB5');
-  r.setProperty('--violet',t.hueViolet||'#C9B6E8');
-  r.setProperty('--violet-deep',t.hueVioletDeep||'#8B6BC4');
-  r.setProperty('--yellow',t.hueYellow||'#F0D878');
-  r.setProperty('--yellow-deep',t.hueYellowDeep||'#C4A030');
-  r.setProperty('--grad-a','linear-gradient(135deg,'+(t.gradA1||t.pink)+','+(t.gradA2||t.mint)+')');
-  r.setProperty('--grad-b','linear-gradient(135deg,'+(t.gradB1||t.mint)+','+(t.gradB2||t.pink)+')');
-  /* card/block elevation needs to be visibly stronger on a dark theme to read against a
-     near-black page — same shadow tokens, just a mode-branched intensity, so this needs no new
-     field on any of the 8 theme objects, only the mode they already carry */
-  if(t.mode==='dark'){
-    r.setProperty('--shadow-card','0 1px 2px rgba(0,0,0,.35), 0 10px 28px -4px rgba(0,0,0,.55)');
-    r.setProperty('--shadow-card-hover','0 2px 4px rgba(0,0,0,.4), 0 18px 44px -6px rgba(0,0,0,.65)');
-    r.setProperty('--shadow-block','0 2px 6px rgba(0,0,0,.5), 0 1px 2px rgba(0,0,0,.3)');
-  } else {
-    r.setProperty('--shadow-card','0 1px 2px rgba(20,16,10,.05), 0 8px 24px -4px rgba(20,16,10,.10)');
-    r.setProperty('--shadow-card-hover','0 2px 4px rgba(20,16,10,.06), 0 16px 40px -6px rgba(20,16,10,.16)');
-    r.setProperty('--shadow-block','0 2px 6px rgba(20,16,10,.14), 0 1px 2px rgba(20,16,10,.07)');
-  }
+  ['--mint','--sun','--leaf'].forEach(function(v){ r.setProperty(v,t.mint); });
+  ['--mint-deep','--sun-deep','--leaf-deep'].forEach(function(v){ r.setProperty(v,t.mintDeep); });
+  ['--aqua','--sky','--water'].forEach(function(v){ r.setProperty(v,t.aqua); });
+  ['--aqua-deep','--sky-deep','--water-deep'].forEach(function(v){ r.setProperty(v,t.aquaDeep); });
+  Object.keys(CAT_COLORS).forEach(function(k){ r.setProperty('--cat-'+k,CAT_COLORS[k]); });
 }
 function setThemeColor(key,val){ S.theme[key]=val; save(); applyTheme(); }
-function setThemeFont(key){ S.theme.fontKey=key; save(); applyTheme(); }
-/* switches the whole palette to the light or dark preset in one step, keeping whatever font the
-   person picked. Any hand-picked colors get replaced by the preset — mode is a starting point to
-   customize from, not a filter layered on top of custom colors. */
-function setThemeMode(mode){
-  const fontKey=S.theme.fontKey;
-  S.theme=Object.assign({},mode==='dark'?DEFAULT_DARK_THEME:DEFAULT_THEME,{fontKey:fontKey});
-  save(); applyTheme(); paintThemePanel();
-}
-function resetTheme(){
-  const mode=S.theme.mode;
-  S.theme=Object.assign({},mode==='dark'?DEFAULT_DARK_THEME:DEFAULT_THEME);
-  save(); applyTheme(); paintThemePanel();
-}
-/* named, saveable snapshots of the whole appearance config — colors, font, and mode — so you can
-   build out a look once and jump back to it later without re-picking every color by hand */
-function saveCurrentTheme(name){
-  const nv=(name||'').trim(); if(!nv) return;
-  const snapshot=Object.assign({},S.theme);
-  const existing=S.savedThemes.filter(function(t){return t.name.toLowerCase()===nv.toLowerCase();})[0];
-  if(existing){ existing.theme=snapshot; }
-  else S.savedThemes.push({id:'th'+Date.now(), name:nv, theme:snapshot});
-  save(); paintThemePanel();
-  toast((existing?'updated':'saved')+' theme "'+nv+'"');
-}
-function applySavedTheme(id){
-  const st=S.savedThemes.filter(function(t){return t.id===id;})[0]; if(!st) return;
-  S.theme=Object.assign({},st.theme);
-  save(); applyTheme(); paintThemePanel();
-}
-function applyPresetTheme(id){
-  const p=PRESET_THEMES.filter(function(t){return t.id===id;})[0]; if(!p) return;
-  S.theme=Object.assign({},p); delete S.theme.id; delete S.theme.name;
-  save(); applyTheme(); paintThemePanel();
-  toast('theme set to "'+p.name+'"');
-}
-function delSavedTheme(id,ev){ if(ev)ev.stopPropagation(); if(!arm('th:'+id)) return;
-  S.savedThemes=S.savedThemes.filter(function(t){return t.id!==id;});
-  armed=null; save(); paintThemePanel();
-}
-function paintThemePanel(){
-  const t=S.theme;
-  const FALLBACK_HUES={hueBlue:'#8FB8E0',hueBlueDeep:'#4A7FB5',hueViolet:'#C9B6E8',hueVioletDeep:'#8B6BC4',
-    hueYellow:'#F0D878',hueYellowDeep:'#C4A030',gradA1:t.pink,gradA2:t.mint,gradB1:t.mint,gradB2:t.pink};
-  ['bgpage','glass','glassStrong','ink','ink2','ink3','pink','pinkDeep','mint','mintDeep',
-   'hueBlue','hueBlueDeep','hueViolet','hueVioletDeep','hueYellow','hueYellowDeep',
-   'gradA1','gradA2','gradB1','gradB2'].forEach(function(k){
-    const el=document.getElementById('th-'+k); if(el) el.value=t[k]||FALLBACK_HUES[k]||'#000000';
-  });
-  const fontEl=document.getElementById('th-font'); if(fontEl) fontEl.value=t.fontKey;
-  const savedEl=document.getElementById('savedThemesRow');
-  if(savedEl){
-    savedEl.innerHTML=S.savedThemes.length?S.savedThemes.map(function(st){
-      const isArm=armed==='th:'+st.id;
-      return '<div style="display:flex;align-items:center;gap:8px">'+
-        '<button class="btn tiny ghost" style="flex:1;text-align:left" onclick="applySavedTheme(\''+st.id+'\')">'+String(st.name).replace(/</g,'&lt;')+'</button>'+
-        '<button class="btn tiny ghost" onclick="delSavedTheme(\''+st.id+'\',event)">'+(isArm?'sure?':'✕')+'</button>'+
-        '</div>';
-    }).join(''):'<span style="font-size:11px;color:var(--ink-3)">no saved themes yet</span>';
-  }
-  const lb=document.getElementById('th-mode-light'), db=document.getElementById('th-mode-dark');
-  if(lb) lb.classList.toggle('on',t.mode!=='dark');
-  if(db) db.classList.toggle('on',t.mode==='dark');
-  paintPresetThemes();
-}
-/* the 5 built-in looks, rendered as tap-to-preview swatches so picking a vibe never means fiddling
-   with eight separate color pickers first */
-function paintPresetThemes(){
-  const el=document.getElementById('presetThemesRow'); if(!el) return;
-  const cur=S.theme;
-  el.innerHTML=PRESET_THEMES.map(function(p){
-    const isOn=['mode','bgpage','ink','pink','pinkDeep','mint','mintDeep'].every(function(k){return cur[k]===p[k];});
-    return '<button class="presetswatch'+(isOn?' on':'')+'" onclick="applyPresetTheme(\''+p.id+'\')" title="'+String(p.name).replace(/</g,'&lt;')+'">'+
-      '<span class="pschip" style="background:'+p.bgpage+';border-color:'+p.stroke+'">'+
-        '<span style="background:'+p.pinkDeep+'"></span><span style="background:'+p.mintDeep+'"></span>'+
-      '</span>'+
-      '<span class="psname">'+String(p.name).replace(/</g,'&lt;')+'</span></button>';
-  }).join('');
-}
 function toggleSettingsPanel(){
   const p=document.getElementById('settingsPanel'); if(!p) return;
-  const show=p.style.display==='none';
-  p.style.display=show?'flex':'none';
-  if(show) paintThemePanel();
+  p.style.display=p.style.display==='none'?'flex':'none';
 }
 function cardCollapsed(id){ return !!(S.layout&&S.layout.collapsed&&S.layout.collapsed[id]); }
 function toggleCardCollapse(id,ev){
@@ -519,16 +416,6 @@ function onColDrop(ev,colIdx){
   S.layout.cols.forEach(function(col){ const idx=col.indexOf(draggedId); if(idx>=0) col.splice(idx,1); });
   S.layout.cols[colIdx].push(draggedId);
   save(); applyLayoutDom();
-}
-/* one-shot staggered entrance, called once from boot(). Scoped to #todayView because every other
-   view starts display:none — animating those too would replay the entrance out of context the
-   first time the user opens that tab. applyLayoutDom() runs again after every drag but never
-   re-adds .enter, so reordering a card doesn't replay it. */
-function playCardEntrance(){
-  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const cards=document.querySelectorAll('#todayView .card');
-  cards.forEach(function(el,i){ el.style.setProperty('--enter-i',i); el.classList.add('enter'); });
-  setTimeout(function(){ cards.forEach(function(el){ el.classList.remove('enter'); el.style.removeProperty('--enter-i'); }); }, 900+cards.length*60);
 }
 /* physically reorders the card DOM nodes to match S.layout.cols — deliberately NOT called from
    the main render() hot path (which runs every second for live timers) since moving a focused
@@ -608,19 +495,15 @@ function categoryOptionsHTML(selected){
     return '<option value="'+String(c).replace(/"/g,'&quot;')+'"'+(c===selected?' selected':'')+'>'+c+'</option>';
   }).join('');
 }
-/* one-time fix: the CENTS payout table was cut to roughly a third of its old values so that a
-   full ritual-only day stays under the cheapest treat. A balance earned under the old table would
-   otherwise look inflated under the new one, so rescale existing balances (and each day's
-   ptsEarned, which the weekly cap reads) by the same factor, once. */
-function rebalancePointsScale(){
-  if(S.pointsRebalancedAt) return;
-  const factor=1/3;
-  S.cents=Math.round(S.cents*factor);
-  Object.keys(S.days).forEach(function(k){
-    const d=S.days[k];
-    if(d.ptsEarned) d.ptsEarned=Math.round(d.ptsEarned*factor);
-  });
-  S.pointsRebalancedAt=Date.now();
+/* Which stored versions we can still open. v4 is upgraded in place by the backfill chain — every
+   v:5 change is additive, so there is nothing to convert here beyond stamping the new number.
+   This guard matters more than it looks: the old code was `S.v!==4 -> blankState()`, so bumping
+   the version without widening it would have silently thrown away real saved data. */
+function acceptVersion(){
+  if(!S) return false;
+  if(S.v===5) return true;
+  if(S.v===4){ S.v=5; return true; }
+  return false;
 }
 function backfillTasks(){
   if(!S.tasks) S.tasks=[];
@@ -701,8 +584,7 @@ function migratePlanItemsToUnified(){
     const p=S.days[k]&&S.days[k].plan;
     if(!p||!Array.isArray(p.items)||!p.items.length) return;
     /* a goal ticked off three weeks ago completed three weeks ago — stamping doneAt with "now"
-       would make every historical item look freshly finished, and once completed tasks start
-       archiving on a doneAt age they'd all resurface for a minute first */
+       would make every historical item look freshly finished */
     const parts=k.split('-').map(Number);
     const dayTs=new Date(parts[0],parts[1]-1,parts[2],12,0,0).getTime();
     p.items.forEach(function(it){
@@ -789,10 +671,10 @@ function flushSave(){
    only ever sent to api.github.com.
    Push is debounced separately from (and longer than) the local save() debounce above, so a burst
    of edits produces one commit, not one per click. */
-const GH_OWNER='eve-wils', GH_REPO='focus_data', GH_BRANCH='main', GH_PATH='state.json';
+const GH_OWNER='eve-wils', GH_REPO='focus_maxxer', GH_BRANCH='data', GH_PATH='data/state.json';
 const GH_TOKEN_KEY='aura_gh_token';
 const GH_PRECONNECT_BACKUP_KEY='aura_gh_preconnect_backup';
-const GH_PUSH_DEBOUNCE_MS=100000;
+const GH_PUSH_DEBOUNCE_MS=2000;
 let ghToken=localStorage.getItem(GH_TOKEN_KEY)||'';
 let ghSha=null, ghSyncing=false, ghLastSyncAt=null, ghLastError=null, ghBranchReady=false;
 let ghSaveTimer=null, ghPushInFlight=false, ghPushQueued=false;
@@ -968,7 +850,7 @@ function makeUnit(o){
     parentId:null, subtaskIds:[],
     source:'manual', notionUrl:null, createdAt:Date.now(), elapsed:0, timerStart:null,
     sched:{type:'none'},
-    mode:'simple', targetN:0, targetSec:0, doneN:0, timedN:0, paidCents:0}, o);
+    mode:'simple', targetN:0, targetSec:0, doneN:0, timedN:0}, o);
 }
 /* one-time fold of the three old entity lists into S.tasks. Ids are carried across verbatim so
    every historical S.days[<date>].done / .qdone entry still points at a real item, and the habit
@@ -1016,12 +898,13 @@ function migrateToUnifiedItems(){
    own this inline, which meant restoring a backup skipped all of it — so a pre-merge backup came
    back with no habits at all, because nothing ran the merge or the heal on it. */
 function hydrateState(){
-  backfillTreats(); backfillAffirm(); backfillTasks(); backfillPapers(); backfillSpendLog();
+  backfillAffirm(); backfillTasks(); backfillPapers();
   backfillCategories(); backfillLayout(); backfillTheme(); backfillMovement(); backfillWeekNotes();
   backfillRitualDefs(); backfillBlockTypes();
+  /* v:5 additions — each idempotent and null-safe, same convention as the ones above */
+  backfillTxns(); backfillWaterGoal(); backfillMeals(); backfillLogEntries(); backfillPinning();
   if(S.readGoal===undefined) S.readGoal=150;
   if(S.mediBestSec===undefined) S.mediBestSec=0;
-  rebalancePointsScale();
   importNotionSeed(); repairNotionLinks(); migrateBlockTasksToUnified();
   migratePlanItemsToUnified();
   migrateToUnifiedItems(); normalizeUnits(); guessTaskModes();
@@ -1111,7 +994,6 @@ function normalizeUnits(){
     if(t.targetSec===undefined) t.targetSec=0;
     if(t.doneN===undefined) t.doneN=0;
     if(t.timedN===undefined) t.timedN=0;
-    if(t.paidCents===undefined) t.paidCents=itemDone(t)&&!isRecurring(t)?centsFor(t):0;
     if(t.kind===undefined) t.kind='task';
     if(t.text===undefined) t.text=t.name||'(untitled)';
     if(t.sched===undefined) t.sched={type:'none'};
@@ -1148,7 +1030,7 @@ async function load(){
        state yet" and falls through to the v3 check / blank state below */
     try{ const r=await window.storage.get(KEY,false); raw=r?r.value:null; }catch(e){ raw=null; }
   }
-  if(raw){ try{ S=JSON.parse(raw); }catch(e){ S=blankState(); } if(!S||S.v!==4) S=blankState();
+  if(raw){ try{ S=JSON.parse(raw); }catch(e){ S=blankState(); } if(!acceptVersion()) S=blankState();
     await snapshotBeforeUnify(); reportHeal(hydrateState()); save(); return; }
   /* no artifact storage here (e.g. this is the GitHub Pages deploy) - if a sync token is already
      saved in this browser, the repo's data branch is the durable store, so try it before ever
@@ -1235,7 +1117,6 @@ function isViewingToday(){ return vday()===today(); }
 function setViewDay(k){
   viewDay=(k===today())?null:k;
   panelOverride=undefined; manualRollup={}; /* expansion state is per-day; don't carry it across */
-  pendingBlockStart=null; /* a pending double-click start doesn't survive switching days */
   if(daysBetween(today(),vday())>=0) buildGaps(vday());
   save(); render();
 }
@@ -1254,8 +1135,12 @@ function shiftKey(k,n){ const p=k.split('-').map(Number); const dt=new Date(p[0]
 function daysBetween(a,b){ const p=a.split('-').map(Number),q=b.split('-').map(Number);
   return Math.round((new Date(q[0],q[1]-1,q[2])-new Date(p[0],p[1]-1,p[2]))/86400000); }
 function day(k){ k=k||today();
-  if(!S.days[k]) S.days[k]={water:0,log:[],done:{},blocks:[],ex:{},exLog:[],pagesLogged:0,pagesBy:{},bookLog:[],pomos:0,qdone:{},questAssign:{},ptsEarned:0};
+  if(!S.days[k]) S.days[k]={water:0,log:[],done:{},blocks:[],ex:{},exLog:[],pagesLogged:0,pagesBy:{},bookLog:[],pomos:0,qdone:{},questAssign:{},goal:(S.waterGoal||100),meals:[]};
   const d=S.days[k];
+  /* the water goal in force the day this record was created, frozen here on purpose: changing
+     S.waterGoal today must not retroactively make a past day pass or fail its streak */
+  if(d.goal===undefined) d.goal=S.waterGoal||100;
+  if(!d.meals) d.meals=[];
   if(!d.pagesBy) d.pagesBy={};
   if(!d.qdone) d.qdone={};
   if(!d.questAssign) d.questAssign={};
@@ -1264,7 +1149,6 @@ function day(k){ k=k||today();
   if(!d.exLog) d.exLog=[];
   if(!d.secs) d.secs={};
   if(!d.bookLog) d.bookLog=[];
-  if(d.ptsEarned===undefined) d.ptsEarned=0;
   if(!d.plan) d.plan={items:[],notes:''};
   if(d.mediMin===undefined) d.mediMin=0;
   if(!d.skipped) d.skipped={};
@@ -1272,6 +1156,12 @@ function day(k){ k=k||today();
   if(!d.focusSegs) d.focusSegs={};
   return d; }
 function vessel(){ return S.vessels[S.vesselIdx]||S.vessels[0]||{name:'Cup',oz:20}; }
+/* resize the cup in place rather than adding another vessel — the sheet offers one number, not a
+   vessel picker, so editing it should change the cup you already use */
+function setVesselOz(v){
+  const n=Math.round(parseFloat(v)||0); if(n<=0) return;
+  const ve=vessel(); ve.oz=n; save(); render();
+}
 function nowMinutes(){ const n=new Date(); const h=n.getHours()<ROLLOVER?n.getHours()+24:n.getHours(); return h*60+n.getMinutes(); }
 function phase(){ const m=nowMinutes(); if(m<12*60) return 'sunrise'; if(m<17*60) return 'day'; return 'moonlight'; }
 function reconcile(){
@@ -1280,13 +1170,32 @@ function reconcile(){
     let k=S.lastDate;
     while(k!==t){
       const dd=S.days[k], got=dd?dd.water:0;
-      if(got<WATER_GOAL&&S.frozenDays.indexOf(k)<0&&S.freezes>0){ S.freezes--; S.frozenDays.push(k); }
+      if(got<goalOn(k)&&S.frozenDays.indexOf(k)<0&&S.freezes>0){ S.freezes--; S.frozenDays.push(k); }
       k=shiftKey(k,1); if(daysBetween(S.lastDate,k)>400) break;
     }
   }
   S.lastDate=t; recomputeStreak(); buildGaps(today()); save();
 }
-function dayCounts(k){ const dd=S.days[k]; return (dd&&dd.water>=WATER_GOAL)||S.frozenDays.indexOf(k)>=0; }
+function waterGoal(){ return S.waterGoal||100; }
+/* The goal that applies on a given day. Today and anything ahead of it track the live setting, so
+   raising the goal takes effect immediately rather than tomorrow. Days already in the past read
+   their own frozen snapshot (or the 100 that was hardcoded for all of history before v:5), so
+   changing the goal can never retroactively make a past day pass or fail its streak. */
+function goalOn(k){
+  if(k>=today()) return waterGoal();
+  const dd=S.days[k];
+  return (dd&&dd.goal)||100;
+}
+function setWaterGoal(v){
+  const n=Math.round(parseFloat(v)||0);
+  if(n<=0) return;
+  S.waterGoal=n;
+  /* keep today's snapshot in step so that when today becomes the past, it freezes at the goal
+     that was actually in force while it was being logged */
+  const d=day(today()); d.goal=n;
+  recomputeStreak(); save(); render();
+}
+function dayCounts(k){ const dd=S.days[k]; return (dd&&dd.water>=goalOn(k))||S.frozenDays.indexOf(k)>=0; }
 function recomputeStreak(){ let k=today(),n=0; if(!dayCounts(k)) k=shiftKey(k,-1);
   while(dayCounts(k)){n++;k=shiftKey(k,-1);if(n>3000)break;} S.waterStreak=n; if(n>S.waterBest)S.waterBest=n; }
 /* ===================== the unified item model =====================
@@ -1475,60 +1384,8 @@ function worstHabitIds(){
   return out;
 }
 function isWorstHabit(id){ return !!worstHabitIds()[id]; }
-function centsFor(t){
-  if(!t) return 0;
-  let base;
-  if(t.kind==='ritual') base=(t.type==='med'?CENTS.med:t.type==='core'?CENTS.core:CENTS.custom);
-  else if(t.kind==='quest') base=CENTS.quest;
-  else base=CENTS.custom;
-  if(t.priority==='High') base=Math.round(base*1.6);
-  else if(t.priority==='Low') base=Math.round(base*0.7);
-  if(t.starred) base=base*2;
-  if(isWorstHabit(t.id)) base=base*2;   /* the one you're struggling with is worth double */
-  return base;
-}
-/* returns what was ACTUALLY applied, which is not always what was asked for — the weekly cap
-   clamps it and another day's view blocks it entirely. The pay-as-you-go ledger depends on
-   knowing the difference, so it can top a task up later once headroom frees up. */
-function earn(n){
-  /* browsing or planning another day never moves money */
-  if(!isViewingToday()) return 0;
-  if(n>0){
-    const headroom=Math.max(0,WEEKLY_CAP_CENTS-weeklyCents());
-    n=Math.min(n,headroom);
-    if(n<=0) return 0;
-  }
-  /* no floor at 0 here on purpose: a real spending-log deficit (see logSpend) should be paid
-     down gradually as normal earning happens, not wiped out by the next ritual tick */
-  S.cents=S.cents+n; const d=day(today()); d.ptsEarned=(d.ptsEarned||0)+n;
-  return n;
-}
-/* ===================== pay-as-you-go ledger =====================
-   An accumulating task pays a slice of its own value as it progresses, and the slices are capped
-   at that value — nine hours of a ten-hour task shouldn't pay nothing, and it shouldn't pay more
-   than the task is worth either. t.paidCents is what has actually been handed over so far, so
-   every route in and out (progress, completion, un-completion, starring) is just "settle up to
-   what's owed now" rather than a separate hand-rolled adjustment. */
-function payUnitTo(t,cents){
-  const already=t.paidCents||0;
-  const delta=Math.round(cents)-already;
-  if(!delta) return 0;
-  const applied=earn(delta);
-  t.paidCents=already+applied;
-  return applied;
-}
-function settlePay(t){
-  /* a habit pays fresh every day, so it has no running ledger to settle */
-  if(isRecurring(t)) return;
-  const full=centsFor(t), m=modeOf(t), tgt=targetOf(t);
-  let owed=0;
-  if(itemDone(t)) owed=full;
-  else if(modeHasTarget(m)&&tgt) owed=full*Math.min(1,progressOf(t)/tgt);
-  payUnitTo(t,owed);
-}
+/* money formatting is still needed — for the budget tracker, which deals in real dollars */
 function dollarsStr(cents){ return '$'+(Math.max(0,cents)/100).toFixed(2); }
-function fmtSigned(cents){ const neg=cents<0; return (neg?'-$':'$')+(Math.abs(cents)/100).toFixed(2); }
-function weeklyCents(){ let t=0; for(let n=0;n<7;n++){ const dd=S.days[shiftKey(today(),-n)]; if(dd) t+=dd.ptsEarned||0; } return t; }
 /* ===================== inline edit / two-tap confirm ===================== */
 let editing=null, armed=null;
 function toggleEdit(id){ editing=editing===id?null:id; armed=null; render(); }
@@ -1541,18 +1398,18 @@ function toggleUnit(id,ev){
   const k=vday(), d=day(k), was=itemDone(t,k);
   if(was){
     if(t.type==='med'&&!arm('undo:'+id)) return;
-    if(isRecurring(t)){ delete d.done[id]; earn(-centsFor(t)); }
-    else { t.done=false; t.doneAt=null; settlePay(t); }
+    if(isRecurring(t)) delete d.done[id];
+    else { t.done=false; t.doneAt=null; }
     armed=null;
   }else{
     /* a running timer has done its job the moment you tick the box — leaving it ticking silently
        in the background was inflating totals for hours after the fact */
     stopTimer(t,k);
-    if(isRecurring(t)){ d.done[id]=Date.now(); earn(centsFor(t)); }
-    else { t.done=true; t.doneAt=Date.now(); settlePay(t); }
+    if(isRecurring(t)) d.done[id]=Date.now();
+    else { t.done=true; t.doneAt=Date.now(); }
     celebrateBurst();
     if(t.blockId){ const b=blockOf(t.blockId);
-      if(b&&isBlockCleared(b)){ earn(CENTS.blockClear); celebrateBurst(true); toast('Block cleared \u2014 '+(b.focus||'untitled')); } }
+      if(b&&isBlockCleared(b)){ celebrateBurst(true); toast('Block cleared \u2014 '+(b.focus||'untitled')); } }
   }
   save();
   /* the seal follows the ritual the habit belongs to, not the block it happens to be drawn in —
@@ -1571,7 +1428,7 @@ function skipItem(id,ev){
   const k=vday(), d=day(k);
   if(d.skipped[id]){ delete d.skipped[id]; toast('Back on the list'); }
   else{
-    if(itemDone(t,k)){ if(isRecurring(t)) delete d.done[id]; else t.done=false; earn(-centsFor(t)); }
+    if(itemDone(t,k)){ if(isRecurring(t)) delete d.done[id]; else t.done=false; }
     d.skipped[id]=Date.now();
     toast('Skipped for '+(isViewingToday()?'today':vdayLabel().toLowerCase())+' \u2014 streak safe');
   }
@@ -1763,24 +1620,24 @@ function unitCtlHTML(t,ctx){
   const inNow=!!at&&at===nowId;
   const onDay=isRecurring(t)?(dueOnDay(t,k)||!!at):(t.day===k);
   const el=taskElapsed(t), want=unitPrimary(ctx), open=editing==='more:'+id;
-  let h='', actions='';
+  let h='';
   /* state reads as text, not as more buttons competing for the eye */
   if(el>0||running) h+='<span class="tclock"'+(running?' data-timer-live-task="'+id+'"':'')+'>'+mmss(el)+'</span>';
   if(at&&ctx!=='block') h+='<span class="statechip">@ '+placementLabel(id)+'</span>';
   if(isRecurring(t)&&ctx!=='block') h+='<span class="statechip">'+schedLabel(t)+'</span>';
   if(sk) h+='<span class="statechip">skipped</span>';
   if(want.indexOf('timer')>=0)
-    actions+='<button class="timerbtn'+(running?' on':'')+'" title="start / stop the timer" onclick="toggleTaskTimerBank(\''+id+'\',event)">'+(running?'\u275a\u275a':'\u25b6')+'</button>';
+    h+='<button class="timerbtn'+(running?' on':'')+'" title="start / stop the timer" onclick="toggleTaskTimerBank(\''+id+'\',event)">'+(running?'\u275a\u275a':'\u25b6')+'</button>';
   if(want.indexOf('now')>=0&&nowId&&!inNow)
-    actions+='<button class="arrowbtn wide" title="put it in the block happening right now" onclick="itemToNow(\''+id+'\',event)">now</button>';
+    h+='<button class="arrowbtn wide" title="put it in the block happening right now" onclick="itemToNow(\''+id+'\',event)">now</button>';
   if(want.indexOf('day')>=0&&!onDay)
-    actions+='<button class="arrowbtn wide" title="put it on the day you\u2019re viewing" onclick="itemToDay(\''+id+'\',event)">\u2192 '+vdayLabel().toLowerCase()+'</button>';
+    h+='<button class="arrowbtn wide" title="put it on the day you\u2019re viewing" onclick="itemToDay(\''+id+'\',event)">\u2192 '+vdayLabel().toLowerCase()+'</button>';
   if(want.indexOf('skip')>=0&&isRecurring(t))
-    actions+='<button class="arrowbtn wide'+(sk?' on':'')+'" title="skip just this day \u2014 your streak stays safe" onclick="skipItem(\''+id+'\',event)">'+(sk?'unskip':'skip')+'</button>';
-  actions+='<button class="morebtn'+(open?' on':'')+'" title="more actions" onclick="event.stopPropagation();toggleEdit(\'more:'+id+'\')">\u22ef</button>';
-  actions+=reorderArrowsHTML(t);
-  actions+='<span class="drag" title="drag onto a block, a day, or the future log">\u283f</span>';
-  return h+'<span class="tr2-actions">'+actions+'</span>';
+    h+='<button class="arrowbtn wide'+(sk?' on':'')+'" title="skip just this day \u2014 your streak stays safe" onclick="skipItem(\''+id+'\',event)">'+(sk?'unskip':'skip')+'</button>';
+  h+='<button class="morebtn'+(open?' on':'')+'" title="more actions" onclick="event.stopPropagation();toggleEdit(\'more:'+id+'\')">\u22ef</button>';
+  h+=reorderArrowsHTML(t);
+  h+='<span class="drag" title="drag onto a block, a day, or the future log">\u283f</span>';
+  return h;
 }
 /* the drawer behind the "more" button — labelled words, not a wall of glyphs */
 function unitMoreHTML(t,ctx){
@@ -1801,7 +1658,7 @@ function unitMoreHTML(t,ctx){
       ph+='<select class="moreact" onclick="event.stopPropagation()" onchange="setTaskProject(\''+id+'\',this.value)">'+categoryOptionsHTML(t.project)+'</select>';
     ph+='<button class="moreact danger'+(isArm?' on':'')+'" onclick="delUnit(\''+id+'\',event)">'+(isArm?'tap again to delete':'✕ delete')+'</button>';
     ph+='</div>';
-    if(isTask&&!t.parentId) ph+=subtaskRowsHTML(t);
+    if(isTask) ph+=subtaskRowsHTML(t);
     return ph;
   }
   let h='<div class="moreacts" onclick="event.stopPropagation()">';
@@ -1829,7 +1686,7 @@ function unitMoreHTML(t,ctx){
   }
   h+='<button class="moreact danger'+(isArm?' on':'')+'" onclick="delUnit(\''+id+'\',event)">'+(isArm?'tap again to delete':'\u2715 delete')+'</button>';
   h+='</div>';
-  if(isTask&&!t.parentId) h+=subtaskRowsHTML(t);
+  if(isTask) h+=subtaskRowsHTML(t);
   return h;
 }
 function unitControlsHTML(t,ctx){ return '<span class="unitctl">'+unitCtlHTML(t,ctx)+'</span>'; }
@@ -1898,7 +1755,7 @@ function checkSeal(r){
   const req=itemsFor(r).filter(function(t){return t.type==='core'||t.type==='med';});
   if(req.length&&req.every(function(t){return itemDone(t);})){
     const key='seal_'+r;
-    if(!d.done[key]){ d.done[key]=Date.now(); earn(CENTS.seal); save(); celebrateBurst(true);
+    if(!d.done[key]){ d.done[key]=Date.now(); save(); celebrateBurst(true);
       /* the ritual's home is its routine block on the timeline now, so that's what celebrates */
       const rb=routineBlockFor(r);
       const c=document.getElementById(rb?'tb-'+rb.id:'panel-'+r);
@@ -1909,25 +1766,22 @@ function checkSeal(r){
 /* ===================== ritual item habit grid (any day, not just today) =====================
    The rituals UI above only ever reads/writes today's day() record. The habit grid needs to
    toggle a single item (e.g. "brush teeth") done/not-done for any of the last 7 days, so these
-   are day-keyed equivalents of isDone/castItem/uncast/checkSeal. Money still credits to the
-   current balance "now" (via earn(), which always books to today's ptsEarned bucket) regardless
-   of which calendar day the habit itself is tagged to — same convention as backdated spend-log
-   entries. */
+   are day-keyed equivalents of isDone/castItem/uncast/checkSeal. */
 function itemDoneOnDay(itemId,dayKey){ const dd=S.days[dayKey]; return !!(dd&&dd.done&&dd.done[itemId]); }
 function toggleItemOnDay(itemId,dayKey){
   const t=unitById(itemId); if(!t) return;
   const dd=day(dayKey);
   const wasDone=!!dd.done[itemId];
-  if(wasDone){ delete dd.done[itemId]; earn(-centsFor(t)); }
-  else { dd.done[itemId]=Date.now(); earn(centsFor(t)); }
+  if(wasDone) delete dd.done[itemId];
+  else dd.done[itemId]=Date.now();
   const r=t.ritual;
   if(isRitualId(r)){
     const req=ritualRoster(r).filter(function(i){return i.type==='core'||i.type==='med';});
     const key='seal_'+r;
     const allDone=req.length>0&&req.every(function(i){return !!dd.done[i.id];});
     const hadSeal=!!dd.done[key];
-    if(allDone&&!hadSeal){ dd.done[key]=Date.now(); earn(CENTS.seal); }
-    else if(!allDone&&hadSeal){ delete dd.done[key]; earn(-CENTS.seal); }
+    if(allDone&&!hadSeal) dd.done[key]=Date.now();
+    else if(!allDone&&hadSeal) delete dd.done[key];
   }
   save(); render();
 }
@@ -1953,14 +1807,47 @@ let manualPanel={};
    false = explicitly closed, overriding even the current-block default. Only one panel shows at
    once now that expanding means "open a side drawer" instead of "grow inline". */
 let panelOverride;
+/* on a phone the detail panel is a full-screen drawer, so auto-opening the current block would
+   mean landing on a block editor instead of the day. Desktop keeps the auto-open, where the panel
+   is a 360px drawer alongside the timeline and costs nothing. Tapping a block still opens it. */
+function isPhone(){ return typeof window!=='undefined'&&window.innerWidth<=760; }
 function openBlockId(){
   if(panelOverride!==undefined) return panelOverride||null;
+  if(isPhone()) return null;
   const d=day(vday());
   const curB=(d.blocks||[]).filter(function(b){return isCurrentBlock(b);})[0];
   return curB?curB.id:null;
 }
 function toggleBlock(id){ panelOverride=(openBlockId()===id)?false:id; render(); }
 function closeBlockPanel(){ panelOverride=false; render(); }
+/* rituals used to only be reachable through the habit streak card, tucked away in the more tab.
+   This is the shortcut from anywhere — any view, any day you happen to be looking at — straight to
+   today's real routine block on the timeline, panel already open. */
+function openRitualToday(ritualId){
+  viewMode='today';
+  if(viewDay!==null){ viewDay=null; panelOverride=undefined; manualRollup={}; }
+  buildGaps(today());
+  const b=(day(today()).blocks||[]).filter(function(bl){return bl.routine===ritualId;})[0];
+  panelOverride=b?b.id:undefined;
+  save(); render();
+  if(b){
+    const el=document.getElementById('tb-'+b.id);
+    if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
+  }
+}
+function ritualQuickIcon(rd){
+  if(rd.id==='sunrise') return '🌅';
+  if(rd.id==='moonlight') return '🌙';
+  return '⏰';
+}
+function renderRitualQuickRow(){
+  const el=document.getElementById('ritualQuickRow'); if(!el) return;
+  el.innerHTML=(S.ritualDefs||[]).map(function(rd){
+    return '<button class="ritualquickbtn" onclick="openRitualToday(\''+rd.id+'\')" title="jump to today’s '+
+      String(rd.name).replace(/</g,'&lt;')+' · '+rd.start+'–'+rd.end+'">'+ritualQuickIcon(rd)+
+      '<span class="rqlabel">'+String(rd.name).replace(/</g,'&lt;')+'</span></button>';
+  }).join('');
+}
 function onQuestDragStart(ev,qid){ ev.dataTransfer.setData('text/plain',qid); ev.dataTransfer.effectAllowed='move'; }
 function onDropQuest(ev,targetKey){ ev.preventDefault(); ev.currentTarget.classList.remove('drophover');
   const qid=ev.dataTransfer.getData('text/plain'); if(!qid) return; assignQuest(qid,targetKey); }
@@ -2071,16 +1958,29 @@ function quickAddSubtask(parentId){
   const el=document.getElementById('subIn-'+parentId); if(!el) return;
   if(addSubtask(parentId,el.value)){ el.value=''; render(); }
 }
-function subtaskRowsHTML(t){
+/* Renders a task's children, and *their* children, to any depth. The model always supported this
+   — makeUnit() has created parentId/subtaskIds since the unified-item migration — but the render
+   was capped at one level by a `!t.parentId` guard at both call sites, so a sub-subtask existed in
+   state and was simply never drawn.
+   MAX_NEST is a cycle guard, not a product limit: subtaskIds is hand-editable state and a task
+   that ends up its own ancestor would otherwise recurse until the stack gives out. */
+const MAX_NEST=8;
+function subtaskRowsHTML(t,depth){
+  depth=depth||0;
+  if(depth>=MAX_NEST) return '';
   const subs=subtasksOf(t);
   let h='<div class="subtasks" onclick="event.stopPropagation()">';
   subs.forEach(function(s){
     const dn=itemDone(s);
+    const kids=subtasksOf(s).length;
     h+='<div class="subrow'+(dn?' done':'')+'">'+
        '<input type="checkbox"'+(dn?' checked':'')+' onchange="toggleUnit(\''+s.id+'\')">'+
        '<span class="tt" contenteditable="true" onblur="setTaskText(\''+s.id+'\',this.textContent)">'+String(s.text).replace(/</g,'&lt;')+'</span>'+
+       (kids?'<span class="nestcount" title="'+kids+' subtask'+(kids===1?'':'s')+'">'+kids+'</span>':'')+
        '<button class="rowbtn" style="opacity:.5" onclick="unlinkSubtask(\''+s.id+'\',event)" title="remove subtask">✕</button>'+
        '</div>';
+    /* each child gets the same treatment, indented one step by .subtasks' own left padding */
+    h+=subtaskRowsHTML(s,depth+1);
   });
   h+='<div class="addtiny"><input id="subIn-'+t.id+'" placeholder="add a subtask, press enter…" maxlength="80" onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddSubtask(\''+t.id+'\')}">'+
      '<button class="btn tiny soft" onclick="quickAddSubtask(\''+t.id+'\')">+</button></div>';
@@ -2089,12 +1989,7 @@ function subtaskRowsHTML(t){
 function toggleTaskStar(id,ev){
   if(ev)ev.stopPropagation();
   const t=taskById(id); if(!t) return;
-  const wasWorth=centsFor(t), wasDone=itemDone(t);
   t.starred=!t.starred;
-  /* the ledger handles the adjustment: whatever was already paid for this task is topped up or
-     clawed back to match its new value, whether it's finished, part-done, or untouched */
-  if(isRecurring(t)){ if(wasDone) earn(centsFor(t)-wasWorth); }
-  else settlePay(t);
   save(); render();
 }
 /* ===================== task modes: setters ===================== */
@@ -2106,13 +2001,13 @@ function setTaskMode(id,m,ev){
   /* give a freshly-promoted task a sensible target so the bar isn't stuck at 0% with no way in */
   if(m==='count'&&!t.targetN) t.targetN=10;
   if((m==='timed'||m==='cumulative')&&!t.targetSec) t.targetSec=(m==='timed'?15*60:5*3600);
-  settlePay(t); save(); render();
+  save(); render();
 }
 function setTaskTargetN(id,v){
   const t=unitById(id); if(!t) return;
   const n=parseInt(v,10);
   t.targetN=(isFinite(n)&&n>0)?n:0;
-  settlePay(t); save(); render();
+  save(); render();
 }
 /* entered in minutes for a timed task, hours for a cumulative one — those are the units you'd
    actually say out loud for each */
@@ -2121,7 +2016,7 @@ function setTaskTargetTime(id,v){
   const n=parseFloat(v);
   const mult=modeOf(t)==='cumulative'?3600:60;
   t.targetSec=(isFinite(n)&&n>0)?Math.round(n*mult):0;
-  settlePay(t); save(); render();
+  save(); render();
 }
 function bumpCount(id,delta,ev){
   if(ev&&ev.stopPropagation) ev.stopPropagation();
@@ -2141,17 +2036,7 @@ function bumpCount(id,delta,ev){
     if((t.timedN||0)>t.doneN) t.timedN=t.doneN;
     if(itemDone(t)&&tgt&&t.doneN<tgt){ t.done=false; t.doneAt=null; }
   }
-  settlePay(t); save(); render();
-}
-/* small tasks pay a little, big/high-priority ones pay more — same idea as CENTS.custom, just
-   scaled. A starred task (really hard, high-friction, or urgent) simply doubles whatever that
-   base would have been. */
-function estimateCents(t){
-  let base=CENTS.custom;
-  if(t.priority==='High') base=Math.round(base*1.6);
-  else if(t.priority==='Low') base=Math.round(base*0.7);
-  if(t.starred) base=base*2;
-  return base;
+  save(); render();
 }
 function assignTaskToDay(id,dayKey){
   const t=taskById(id); if(!t) return;
@@ -2313,7 +2198,6 @@ function toggleTaskTimerBank(id,ev){ if(ev)ev.stopPropagation();
       t.done=true; t.doneAt=Date.now(); celebrateBurst(true);
       toast(String(t.text)+' — '+fmtHrs(tgt)+' logged');
     }
-    settlePay(t);
   }
   else t.timerStart=Date.now();
   save(); render();
@@ -2326,15 +2210,15 @@ function addWater(kind,amtOverride){
   else if(kind==='custom') amt=Math.round(amtOverride||0);
   else if(kind==='undo'){
     const last=d.log.length?d.log.pop():0; if(!last){toast('Nothing to undo');return;}
-    const was=d.water>=WATER_GOAL; d.water=Math.max(0,d.water-last);
-    if(was&&d.water<WATER_GOAL) earn(-CENTS.waterGoal);
+    d.water=Math.max(0,d.water-last);
     recomputeStreak(); save(); render(); return;
   }
   if(!amt) return;
   const before=d.water; d.water+=amt; d.log.push(amt);
   celebrateBurst();
-  if(before<WATER_GOAL&&d.water>=WATER_GOAL){ earn(CENTS.waterGoal); recomputeStreak();
-    glow('waterCard'); celebrateBurst(true); toast('100 oz — '+S.waterStreak+' day streak'); }
+  const goal=goalOn(vday());
+  if(before<goal&&d.water>=goal){ recomputeStreak();
+    glow('waterCard'); celebrateBurst(true); toast(goal+' oz — '+S.waterStreak+' day streak'); }
   if(before<FREEZE_AT&&d.water>=FREEZE_AT&&S.freezes<MAX_FREEZE){ S.freezes++;
     toast('Freeze token earned ('+S.freezes+'/'+MAX_FREEZE+')'); }
   save(); render();
@@ -2360,23 +2244,6 @@ function fmtCups(n){ return (n%1===0)?String(n):n.toFixed(1); }
 function hhmm(dt){ const x=new Date(dt); return String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0'); }
 function toMin(s){ const p=s.split(':').map(Number); return p[0]*60+p[1]; }
 function fromMin(m){ m=((m%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
-/* a block's start/end used to be a native time input, which on a phone means scrolling a wheel
-   one minute at a time to reach the number you want — this offers only the 15-minute marks so
-   picking one is a single tap. Existing times aren't guaranteed to land on one of those marks
-   though (a calendar-synced block keeps the source event's exact minute, and drag-resize snaps
-   to 5-minute steps) — for those, the current value gets its own extra option so it still shows
-   correctly and stays put until you actually pick a different, 15-minute-aligned one; nothing
-   gets silently rounded just by opening the panel. */
-function timeOptionsHTML(selected){
-  let onGrid=false;
-  let h=Array.from({length:96},function(_,i){
-    const v=fromMin(i*15);
-    if(v===selected) onGrid=true;
-    return '<option value="'+v+'"'+(v===selected?' selected':'')+'>'+v+'</option>';
-  }).join('');
-  if(selected&&!onGrid) h='<option value="'+selected+'" selected>'+selected+'</option>'+h;
-  return h;
-}
 function blockDur(b){ let e=toMin(b.end||fromMin(toMin(b.start)+60)), s=toMin(b.start); if(e<=s)e+=1440; return e-s; }
 function overlaps(s1,e1,s2,e2){ return s1<e2&&s2<e1; }
 function isCurrentBlock(b){ if(!isViewingToday()) return false; const nm=nowMinutes()%1440; const s=toMin(b.start); let e=s+blockDur(b); return nm>=s&&nm<e; }
@@ -2428,6 +2295,9 @@ function mergeEvents(evs){
     return blockTasksFor(b).length>0||(b.notes&&b.notes.trim());
   });
 }
+/* fills every uncovered stretch of the 6am-10pm skeleton with a filler block sized to the
+   actual gap — not a fixed hourly grid. A 30-minute gap between two real blocks gets a
+   30-minute filler, not a whole empty hour sitting next to a half-empty one. */
 /* Your rituals are fixed points of the day, so they get real blocks on the timeline rather than a
    panel off to the side. Seeded once per day and then yours: move them, rename them, drop other
    things in, or delete one for a day and it stays deleted — routineSeeded is what stops tomorrow's
@@ -2447,20 +2317,62 @@ function ensureRoutineBlocks(k){
   d.routineSeeded=true;
   d.blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
 }
-/* the calendar is blank wherever nothing's scheduled now — no more synthetic filler blocks tiling
-   the whole day. buildGaps is just "seed the routines, and drop any auto:true block a block from
-   before this change might still be carrying" (cheap every-render check, doubles as one-time
-   cleanup of old data with no separate migration needed). */
 function buildGaps(k){
   k=k||vday();
+  /* only ever generate a skeleton for today or a future day — filling in a past day that was
+     never opened would invent blocks that day never actually had */
   if(daysBetween(today(),k)<0) return;
   ensureRoutineBlocks(k);
   const d=day(k);
-  d.blocks=d.blocks.filter(function(b){return !b.auto;});
+  d.blocks=d.blocks.filter(function(b){
+    return !(b.auto&&!blockTasksFor(b,k).length&&!(b.notes&&b.notes.trim())&&!b.focus&&!b.category);
+  });
+  const real=d.blocks.map(function(b){
+    const s=Math.max(DAY_START,toMin(b.start));
+    const e=Math.min(DAY_END,s+blockDur(b));
+    return [s,e];
+  }).filter(function(iv){return iv[1]>iv[0];}).sort(function(a,b){return a[0]-b[0];});
+  const merged=[];
+  real.forEach(function(iv){
+    const last=merged[merged.length-1];
+    if(last&&iv[0]<=last[1]) last[1]=Math.max(last[1],iv[1]);
+    else merged.push(iv.slice());
+  });
+  let cursor=DAY_START;
+  merged.forEach(function(iv){
+    if(iv[0]>cursor) fillGapRange(d,cursor,iv[0],k);
+    cursor=Math.max(cursor,iv[1]);
+  });
+  if(cursor<DAY_END) fillGapRange(d,cursor,DAY_END,k);
   d.blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
 }
-/* the shortest a block is allowed to be — also the drag/click snap increment on the calendar */
+/* how an open stretch gets chunked: snap to the clock hour first, then run whole hours,
+   then leave whatever's left as a short final session. 2:15pm-10pm becomes 2:15-3, 3-4, 4-5 …
+   12:00-2:15pm becomes 12-1, 1-2, 2-2:15. Slivers under MIN_GAP are skipped entirely —
+   a 5-minute strip is not a work session, it's visual noise. */
 const MIN_GAP=15;
+/* a contiguous run of unassigned (empty, auto-filled) blocks totaling at least this many minutes
+   collapses into a single toggle row instead of showing each open hour as its own line */
+const UNASSIGNED_COLLAPSE_MIN=120;
+function fillGapRange(d,from,to,dayKey){
+  if(to-from<MIN_GAP) return;
+  let cur=from;
+  /* ids are day-scoped (not just minute-of-day) so that yesterday's 6am gap block and today's
+     6am gap block never collide — otherwise a task pinned to yesterday's auto-filled block would
+     still turn up "inside" today's identically-numbered block once it regenerates, since
+     blockTasksFor matches purely by block id (see the day-check fix there too). */
+  const dayPrefix=dayKey||vday();
+  while(cur<to){
+    let next;
+    if(cur%60!==0) next=Math.min(to,cur+(60-cur%60)); /* partial leading hour: snap up to the hour */
+    else next=Math.min(to,cur+60);                    /* on the hour: take a whole hour (or what's left) */
+    if(to-next>0&&to-next<MIN_GAP) next=to;           /* would strand a sliver — absorb it into this block */
+    if(next-cur>=MIN_GAP){
+      d.blocks.push({id:'auto'+dayPrefix+'_'+cur, start:fromMin(cur), end:fromMin(next), focus:'', auto:true, notes:'', type:'open', category:null});
+    }
+    cur=next;
+  }
+}
 async function syncCalendar(){
   const st=document.getElementById('syncStatus');
   if(!(window.cowork&&window.cowork.callMcpTool)){
@@ -2484,99 +2396,36 @@ async function syncCalendar(){
   }
 }
 /* legacy entry point — an id="newBlockTime" input was never actually wired into the page, so this
-   was dead code. createBlockAt() below is the real, reachable way to make a new block now
-   (double-click twice on the calendar, drag across it, or the "+" button); addBlock() is kept
-   only for whatever external caller might still reach for it, now with a sane fallback instead
-   of crashing on a missing element. */
+   was dead code. createBlockAt() below is the real, reachable way to make a new block now (tap an
+   open gap on the timeline); addBlock() is kept only for whatever external caller might still
+   reach for it, now with a sane fallback instead of crashing on a missing element. */
 function addBlock(){
   const el=document.getElementById('newBlockTime');
-  createBlockAt((el&&el.value)||'12:00',60);
+  createBlockAt((el&&el.value)||'12:00');
 }
-/* the one path every creation gesture (double-click-twice, drag, "+") funnels through: a new
-   block at startTime for durMin, opened immediately so setup (name, type, category/tasks)
-   continues right there in the expand view. */
+/* opening a stretch of open time (as opposed to locking one in, which is a separate, deliberate
+   action via lockIn()) claims a generous 2-4 hour swath of it by default rather than a token hour —
+   open time is meant to be roomy and flexible, not sliced into meeting-sized crumbs. Capped to
+   whatever's actually available in the gap being opened, so a 90-minute gap just becomes one
+   90-minute block instead of overshooting into whatever comes next. */
+const OPEN_BLOCK_MIN=120, OPEN_BLOCK_MAX=240;
+function pickOpenBlockDur(availableMin){
+  if(availableMin==null) return OPEN_BLOCK_MAX;
+  if(availableMin<=OPEN_BLOCK_MIN) return availableMin;
+  return Math.min(availableMin,OPEN_BLOCK_MAX);
+}
+/* tap-to-create: turns a stretch of open time into a real, open-type block starting at startTime.
+   buildGaps() re-derives the filler blocks around whatever's "real" on every render (see the call
+   in day-view render), so pushing just the new block and re-rendering is enough — the rest of the
+   day's open time refills itself around it automatically. */
 function createBlockAt(startTime,durMin){
-  durMin=durMin||60;
+  durMin=durMin||pickOpenBlockDur();
   const id='b'+Date.now();
-  day(vday()).blocks.push({id:id, start:startTime, end:fromMin(toMin(startTime)+durMin), focus:'', notes:'', type:'single', category:null});
+  day(vday()).blocks.push({id:id, start:startTime, end:fromMin(toMin(startTime)+durMin), focus:'', notes:'', type:'open', category:null});
   day(vday()).blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
-  panelOverride=id;
   save(); render();
+  panelOverride=id; render();
 }
-/* a persistent, guided way in: same createBlockAt everything else uses, just defaulted to "now"
-   (or day start, viewing another day) instead of wherever you clicked. */
-function quickCreateBlock(){
-  const start=fromMin(snap15(isViewingToday()?nowMinutes()%1440:DAY_START));
-  createBlockAt(start,60);
-}
-/* ===================== creating a block by clicking/dragging blank calendar space =====================
-   Two gestures, one destination (createBlockAt): drag across blank time like Google Calendar, or
-   double-click once to mark a start and again to mark an end. Both snap to 15 minutes and both
-   bail out if the pointer actually landed on an existing block — that's its own click target. */
-/* mousedown only — no ontouchstart. On a phone, scrolling the calendar routinely moves more than
-   the 6px slop below before your finger lifts, so every scroll swipe over blank calendar space
-   was silently becoming "drag to create a block." Touch still gets double-click-twice
-   (ondblclick, via a double-tap) and the "+" quick-create button in the card header. */
-function gridCanvasHandlers(origin){
-  return 'data-origin="'+origin+'" onmousedown="startCanvasCreate(event)" ondblclick="onCanvasDblClick(event)"';
-}
-function canvasEventY(ev,el){
-  const rect=el.getBoundingClientRect();
-  return ev.clientY-rect.top;
-}
-let canvasDrag=null;
-function startCanvasCreate(ev){
-  if(ev.target.closest('.gridblock')) return;
-  const el=ev.currentTarget;
-  canvasDrag={el:el, origin:parseInt(el.dataset.origin,10), startPx:canvasEventY(ev,el), moved:false};
-  document.addEventListener('mousemove',onCanvasCreateMove);
-  document.addEventListener('mouseup',onCanvasCreateEnd);
-}
-function onCanvasCreateMove(ev){
-  if(!canvasDrag) return;
-  const curPx=canvasEventY(ev,canvasDrag.el);
-  if(!canvasDrag.moved&&Math.abs(curPx-canvasDrag.startPx)<6) return; /* still just a click, not a drag */
-  canvasDrag.moved=true;
-  if(ev.cancelable) ev.preventDefault();
-  let startMin=snap15(pxToMin(canvasDrag.startPx,canvasDrag.origin));
-  let endMin=snap15(pxToMin(curPx,canvasDrag.origin));
-  if(endMin<startMin){ const t=startMin; startMin=endMin; endMin=t; }
-  endMin=Math.max(endMin,startMin+MIN_GAP);
-  canvasDrag.ghostStart=startMin; canvasDrag.ghostEnd=endMin;
-  const el=canvasDrag.el;
-  let ghost=el.querySelector('.creatorghost');
-  if(!ghost){ ghost=document.createElement('div'); ghost.className='creatorghost'; el.appendChild(ghost); }
-  const top=minToPx(startMin,canvasDrag.origin), h=Math.max(20,minToPx(endMin,canvasDrag.origin)-top);
-  ghost.style.top=top+'px'; ghost.style.height=h+'px';
-  ghost.textContent=fromMin(startMin)+'–'+fromMin(endMin);
-}
-function onCanvasCreateEnd(){
-  document.removeEventListener('mousemove',onCanvasCreateMove);
-  document.removeEventListener('mouseup',onCanvasCreateEnd);
-  if(!canvasDrag) return;
-  const ghost=canvasDrag.el.querySelector('.creatorghost'); if(ghost) ghost.remove();
-  if(canvasDrag.moved&&canvasDrag.ghostStart!==undefined) createBlockAt(fromMin(canvasDrag.ghostStart),canvasDrag.ghostEnd-canvasDrag.ghostStart);
-  canvasDrag=null;
-}
-let pendingBlockStart=null;
-function onCanvasDblClick(ev){
-  if(ev.target.closest('.gridblock')) return;
-  const el=ev.currentTarget;
-  const origin=parseInt(el.dataset.origin,10);
-  const min=snap15(pxToMin(canvasEventY(ev,el),origin));
-  if(pendingBlockStart===null){
-    pendingBlockStart=min;
-    toast('double-click again to set the end — Escape to cancel');
-    render();
-  }else{
-    let s=pendingBlockStart, e=min;
-    if(e<s){ const t=s; s=e; e=t; }
-    e=Math.max(e,s+MIN_GAP);
-    pendingBlockStart=null;
-    createBlockAt(fromMin(s),e-s);
-  }
-}
-function cancelPendingBlock(){ if(pendingBlockStart!==null){ pendingBlockStart=null; render(); } }
 function delBlock(id){ if(!arm('blk:'+id))return;
   const d=day(vday()); d.blocks=d.blocks.filter(function(b){return b.id!==id;}); armed=null; save(); render(); }
 function blockOf(id){ return day(vday()).blocks.filter(function(b){return b.id===id;})[0]; }
@@ -2760,11 +2609,11 @@ function submitPages(id){
   b.cur=np; editing=null;
   if(gained!==0){
     const d=day(vday());
-    let gainedCents=0, removedBook=null, finishedAt=null;
+    let removedBook=null, finishedAt=null;
     if(gained>0){
       d.pagesLogged=(d.pagesLogged||0)+gained;
       d.pagesBy[id]=(d.pagesBy[id]||0)+gained;
-      earn(CENTS.pages); gainedCents=CENTS.pages; celebrateBurst();
+      celebrateBurst();
     }
     if(b.cur>=b.pages){
       finishedAt=Date.now();
@@ -2774,7 +2623,7 @@ function submitPages(id){
       celebrateBurst(true);
       toast('Finished “'+b.title+'” — onto the shelf');
     } else if(gained>0) toast('+'+gained+' pages');
-    d.bookLog.push({bookId:id, prevCur:prevCur, newCur:np, gainedCents:gainedCents, removedBook:removedBook, finishedAt:finishedAt});
+    d.bookLog.push({bookId:id, prevCur:prevCur, newCur:np, removedBook:removedBook, finishedAt:finishedAt});
   }
   save(); render();
 }
@@ -2789,11 +2638,10 @@ function undoBook(){
     const b=S.books.filter(function(x){return x.id===last.bookId;})[0];
     if(b) b.cur=last.prevCur;
   }
-  if(last.gainedCents){
+  if(last.newCur>last.prevCur){
     const delta=last.newCur-last.prevCur;
     d.pagesLogged=Math.max(0,(d.pagesLogged||0)-delta);
     d.pagesBy[last.bookId]=Math.max(0,(d.pagesBy[last.bookId]||0)-delta);
-    earn(-last.gainedCents);
   }
   toast('Undid page update');
   save(); render();
@@ -2836,12 +2684,9 @@ function cyclePaperStatus(id,ev){ if(ev)ev.stopPropagation();
   const p=paperById(id); if(!p) return;
   const i=PAPER_STATUSES.indexOf(p.status);
   const ni=(i+1)%PAPER_STATUSES.length;
-  const delta=PAPER_STATUS_CENTS[ni]-PAPER_STATUS_CENTS[i];
   p.status=PAPER_STATUSES[ni];
-  if(delta) earn(delta);
   save(); render();
-  const tag=delta>0?' +$'+(delta/100).toFixed(2):(delta<0?' -$'+(-delta/100).toFixed(2):'');
-  toast(p.status+tag);
+  toast(p.status);
 }
 function delPaper(id,ev){ if(ev)ev.stopPropagation(); if(!arm('pp:'+id))return;
   S.papers=S.papers.filter(function(p){return p.id!==id;});
@@ -2873,7 +2718,7 @@ function logMeditationMinutes(min){
   if(min<=0) return;
   const d=day(vday());
   d.mediMin=(d.mediMin||0)+min;
-  if(!d.done['medit']){ d.done['medit']=Date.now(); earn(CENTS.quest); }
+  if(!d.done['medit']) d.done['medit']=Date.now();
   const secs=Math.round(min*60);
   if(secs>(S.mediBestSec||0)){ S.mediBestSec=secs; toast('New personal best · '+mmss(secs)); }
   else toast(Math.round(min)+' min meditation logged');
@@ -2931,18 +2776,7 @@ function stopwatchToggle(){
   medi.iv=setInterval(mediPaint,1000);
   mediPaint();
 }
-/* generic percentage-ring painter — the reusable half of what the meditation ring below already
-   does by hand: any future ring (a goal, a budget bucket, a macro balance) just needs its own
-   static <svg> skeleton in markup (same shape as .mring/.pring) and a call to paintRing(id,pct,r)
-   to animate the arc. Not a markup generator — this codebase's convention throughout is a static
-   HTML skeleton patched by targeted DOM writes each render, not innerHTML regeneration, so a new
-   ring's skeleton lives in index.html same as .mring's does. */
-function paintRing(id,pct,r){
-  const ring=document.getElementById(id); if(!ring) return;
-  const circ=2*Math.PI*(r||40);
-  ring.setAttribute('stroke-dasharray',circ);
-  ring.setAttribute('stroke-dashoffset',circ*(1-Math.max(0,Math.min(1,pct))));
-}
+const MRING_CIRC=2*Math.PI*44; /* r=44 in the svg viewBox */
 function mediBestSec(){ return S.mediBestSec||0; }
 /* countdown: ring drains as the timer runs down.
    stopwatch: ring fills toward your personal best. Once you pass it the ring flips to pink
@@ -2963,7 +2797,8 @@ function mediPaint(){
   else { const m=Math.floor(medi.left/60),s=medi.left%60; t.textContent=m+':'+String(s).padStart(2,'0'); }
   const ring=document.getElementById('mediRing');
   if(ring){
-    paintRing('mediRing',st.pct,44);
+    ring.setAttribute('stroke-dasharray',MRING_CIRC);
+    ring.setAttribute('stroke-dashoffset',MRING_CIRC*(1-Math.max(0,Math.min(1,st.pct))));
     ring.classList.toggle('past',!!st.past);
   }
   const cue=document.getElementById('breathCue');
@@ -3005,7 +2840,7 @@ function toggleActTimer(actId){
     const d=day(vday()); d.ex[actId]=(d.ex[actId]||0)+minutes;
     d.exLog.push({act:actId,min:minutes});
     delete S.actTimers[actId];
-    earn(CENTS.move); celebrateBurst();
+    celebrateBurst();
     const a=allActs().filter(function(x){return x.id===actId;})[0];
     toast((a?a.name+' — ':'')+minutes+' min logged');
   }else{
@@ -3018,7 +2853,6 @@ function undoMove(){
   if(!d.exLog.length){ toast('Nothing to undo'); return; }
   const last=d.exLog.pop();
   d.ex[last.act]=Math.max(0,(d.ex[last.act]||0)-last.min);
-  earn(-CENTS.move);
   const a=allActs().filter(function(x){return x.id===last.act;})[0];
   toast('Undid '+last.min+' min '+(a?a.name:last.act));
   save(); render();
@@ -3056,38 +2890,39 @@ function submitMoveGoal(){
 function submitReadGoal(){
   const el=document.getElementById('readGoalIn'); const g=Math.round(parseFloat(el.value)||0);
   if(g>0){ S.readGoal=g; editing=null; save(); render(); } }
-/* ===================== tea / treats ===================== */
 function setTea(i,v){ const k=vday(); const t=S.tea[k]||['','','']; t[i]=v; S.tea[k]=t; save(); }
-function redeem(id){
-  const r=S.treats.filter(function(x){return x.id===id;})[0];
-  const cost=Math.round(r.points);
-  if(S.cents<cost){ toast(dollarsStr(cost-S.cents)+' more to go'); return; }
-  if(!arm('redeem:'+id)) return;
-  S.cents-=cost; S.redeemed.push({name:r.name,at:Date.now()});
-  armed=null; celebrateBurst(true); toast('Enjoy: '+r.name); save(); render();
+/* ===================== spending / budget =====================
+   Real money, and only real money. This used to debit the points balance (a purchase made you
+   "go into deficit" against earned points); with the economy gone these are simply transactions
+   against a monthly budget. Amounts are integer cents throughout — dollars exist only at the
+   input and output edges. */
+function budgetMonthlyCents(){ return (S.budget&&S.budget.monthlyCents)||0; }
+/* the budget period containing dayKey, honouring a start-of-month other than the 1st */
+function budgetPeriodOf(k){
+  const p=k.split('-').map(Number);
+  const startsOn=(S.budget&&S.budget.startsOn)||1;
+  let y=p[0], m=p[1];
+  if(p[2]<startsOn){ m--; if(m<1){ m=12; y--; } }
+  return y+'-'+String(m).padStart(2,'0');
 }
-function addTreat(){
-  const n=document.getElementById('newTreatName').value.trim();
-  const c=Math.round(parseFloat(document.getElementById('newTreatCost').value)||0);
-  if(!n||!c)return;
-  S.treats.push({id:'tr'+Date.now(),name:n,points:c});
-  document.getElementById('newTreatName').value=''; document.getElementById('newTreatCost').value='';
-  save(); render();
+function txnsInPeriod(period){
+  period=period||budgetPeriodOf(vday());
+  return (S.txns||[]).filter(function(t){ return budgetPeriodOf(t.day)===period; });
 }
-function delTreat(id,ev){ ev.stopPropagation(); if(!arm('tr:'+id))return;
-  S.treats=S.treats.filter(function(t){return t.id!==id;}); armed=null; save(); render(); }
-/* ===================== spending log =====================
-   For real, already-happened purchases (a coffee, a book, anything discretionary). Unlike
-   redeem(), this is allowed to push S.cents negative — that negative balance IS the deficit,
-   and it gets paid back down by ordinary earning over the following days. */
-function logSpend(name,amountCents,dayKey){
+function spentInPeriod(period){
+  return txnsInPeriod(period).reduce(function(a,t){ return a+(t.amountCents||0); },0);
+}
+function remainingCents(period){ return budgetMonthlyCents()-spentInPeriod(period); }
+function logSpend(name,amountCents,dayKey,cat){
   dayKey=dayKey||vday();
-  S.cents-=amountCents;
-  S.spendLog.unshift({id:'sp'+Date.now()+Math.random().toString(36).slice(2,7), name:name, amount:amountCents, at:Date.now(), day:dayKey, balanceAfter:S.cents});
-  if(S.spendLog.length>200) S.spendLog.length=200;
+  S.txns.unshift({id:'tx'+Date.now()+Math.random().toString(36).slice(2,7), name:name,
+    amountCents:amountCents, cat:cat||'Uncategorized', at:Date.now(), day:dayKey});
+  if(S.txns.length>500) S.txns.length=500;
   save(); render();
-  toast(S.cents>=0?'logged '+dollarsStr(amountCents)+' · '+fmtSigned(S.cents)+' left'
-                  :'logged '+dollarsStr(amountCents)+' · '+fmtSigned(S.cents)+' deficit');
+  const left=remainingCents();
+  toast(budgetMonthlyCents()
+    ? 'logged '+dollarsStr(amountCents)+' · '+dollarsStr(Math.max(0,left))+' left'
+    : 'logged '+dollarsStr(amountCents));
 }
 function addSpend(){
   const nameEl=document.getElementById('spendName'), amtEl=document.getElementById('spendAmt');
@@ -3097,26 +2932,41 @@ function addSpend(){
   logSpend(name,amt,vday());
   nameEl.value=''; amtEl.value='';
 }
+/* deleting a transaction is now just a delete — there is no balance to put back */
 function delSpend(id,ev){ if(ev)ev.stopPropagation(); if(!arm('sp:'+id)) return;
-  const item=S.spendLog.filter(function(s){return s.id===id;})[0];
-  if(item) S.cents+=item.amount; /* reverse it out */
-  S.spendLog=S.spendLog.filter(function(s){return s.id!==id;});
+  S.txns=S.txns.filter(function(t){return t.id!==id;});
   armed=null; save(); render();
 }
+function setTxnName(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t) return; const nv=(v||'').trim(); if(nv) t.name=nv; save(); }
+function setTxnAmount(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t) return; const n=Math.round((parseFloat(v)||0)*100); if(n>0) t.amountCents=n; save(); render(); }
+function setTxnDay(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t||!/^\d{4}-\d{2}-\d{2}$/.test(v||'')) return; t.day=v; save(); render(); }
+function setTxnCat(id,v){ const t=(S.txns||[]).filter(function(x){return x.id===id;})[0];
+  if(!t) return; t.cat=v||'Uncategorized'; save(); render(); }
+function addTxnCat(name){ name=(name||'').trim();
+  if(!name||S.txnCats.indexOf(name)>=0) return; S.txnCats.push(name); save(); render(); }
+function setBudgetMonthly(v){ const n=Math.round((parseFloat(v)||0)*100);
+  S.budget.monthlyCents=Math.max(0,n); save(); render(); }
 /* ===================== habit streak grid =====================
    Same visual language as the no-spend row, but inverted: here presence (not absence) of the
    habit is the win. Only habits with a clean built-in daily pass/fail signal get a row —
    the ritual seal (every core/med item in that ritual done) and the water goal. */
-const HABIT_STREAKS=[
-  {id:'sunrise', name:'sunrise ritual'},
-  {id:'moonlight', name:'moonlight ritual'},
-  {id:'water', name:'water goal'}
-];
+/* The rows are DERIVED, never stored. This used to be a hardcoded list of three (sunrise,
+   moonlight, water) which quietly disagreed with S.ritualDefs — that list has been user-extendable
+   via addRitualDef() for a while, so adding a fourth ritual produced no fourth habit row.
+   Now every ritual contributes a row (it passes on a day when its seal is set, i.e. every core/med
+   item in it was done) plus one row for the water goal. Adding a habit is adding a ritual; there
+   is deliberately no parallel S.habits array to drift out of sync. */
+function habitRows(){
+  return (S.ritualDefs||[]).map(function(rd){ return {id:rd.id, name:rd.name}; })
+    .concat([{id:'water', name:'water goal'}]);
+}
 function habitDoneOnDay(habitId,dayKey){
   const dd=S.days[dayKey];
-  if(habitId==='sunrise') return !!(dd&&dd.done&&dd.done['seal_sunrise']);
-  if(habitId==='moonlight') return !!(dd&&dd.done&&dd.done['seal_moonlight']);
-  if(habitId==='water') return !!(dd&&dd.water>=WATER_GOAL)||S.frozenDays.indexOf(dayKey)>=0;
+  if(habitId==='water') return !!(dd&&dd.water>=goalOn(dayKey))||S.frozenDays.indexOf(dayKey)>=0;
+  if(isRitualId(habitId)) return !!(dd&&dd.done&&dd.done['seal_'+habitId]);
   return false;
 }
 function habitStreak(habitId){
@@ -3131,8 +2981,60 @@ function habitStreak(habitId){
   }
   return streak;
 }
+/* ===================== day score =====================
+   One number for "how did this day go", used by the header bar, the month calendar rings and
+   (in the mobile shell) the day-of-week strip and week-grid column headers. Deliberately a
+   single definition: before this there were two different scores — a 0.7 habits / 0.3 water blend
+   in render() and a separate shape in dayStats() for the month view — which disagreed with each
+   other on the same day. Both now call this.
+
+   The mean of four equally-weighted components, each 0..1:
+     water   drunk / that day's goal, capped at 1
+     food    healthy / (healthy + poor) over the day's logged meal categories
+     habits  derived habit rows passing (see habitRows())
+     blocks  blocks whose tasks are all done / blocks that have tasks
+   A component with nothing to measure yet is skipped rather than counted as zero, so a day with
+   no meals logged isn't punished for it — the score reflects what you actually track. A day with
+   nothing at all scores 0. Days in the future score 0, never partial. */
+const FOOD_HEALTHY=['veggies','protein','berries','greens','dairy'];
+const FOOD_POOR=['sugary','fried','starch'];
+/* 'grains' is in neither list on purpose: a neutral filler that shouldn't reward or penalise. */
+function foodScore(k){
+  const dd=S.days[k]; if(!dd||!dd.meals||!dd.meals.length) return null;
+  let good=0, bad=0;
+  dd.meals.forEach(function(m){ (m.cats||[]).forEach(function(c){
+    if(FOOD_HEALTHY.indexOf(c)>=0) good++; else if(FOOD_POOR.indexOf(c)>=0) bad++;
+  }); });
+  if(!good&&!bad) return null;
+  return good/(good+bad);
+}
+function blockScore(k){
+  const dd=S.days[k]; if(!dd||!dd.blocks||!dd.blocks.length) return null;
+  const withTasks=dd.blocks.filter(function(b){ return blockTasksFor(b,k).length; });
+  if(!withTasks.length) return null;
+  const cleared=withTasks.filter(function(b){
+    return blockTasksFor(b,k).every(function(t){ return itemDone(t,k); });
+  }).length;
+  return cleared/withTasks.length;
+}
+function habitScore(k){
+  const rows=habitRows(); if(!rows.length) return null;
+  const done=rows.filter(function(h){ return habitDoneOnDay(h.id,k); }).length;
+  return done/rows.length;
+}
+function dayScore(k){
+  if(k>today()) return 0;
+  const dd=S.days[k];
+  const parts=[];
+  if(dd&&dd.water) parts.push(Math.min(1,dd.water/goalOn(k)));
+  const f=foodScore(k); if(f!==null) parts.push(f);
+  const h=habitScore(k); if(h!==null) parts.push(h);
+  const b=blockScore(k); if(b!==null) parts.push(b);
+  if(!parts.length) return 0;
+  return parts.reduce(function(a,x){return a+x;},0)/parts.length;
+}
 /* ===================== no-spend streak ===================== */
-function spentOnDay(dayKey){ return S.spendLog.some(function(s){return s.day===dayKey;}); }
+function spentOnDay(dayKey){ return (S.txns||[]).some(function(t){return t.day===dayKey;}); }
 function noSpendStreak(){
   let streak=0;
   for(let n=0;n<365;n++){
@@ -3155,7 +3057,7 @@ function addSpendForDay(dayKey){
 function downloadSnapshot(silent){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='prism-backup-'+today()+'.json'; a.click();
+  a.download='aura-farm-backup-'+today()+'.json'; a.click();
   S.lastBackup=today(); save();
   if(!silent) toast('Backup downloaded'); render();
 }
@@ -3167,7 +3069,7 @@ function onImportFile(ev){
     try{
       const obj=JSON.parse(r.result);
       if(obj&&obj.v===4) adoptState(obj);
-      else toast('That file doesn\u2019t look like a Prism backup');
+      else toast('That file doesn\u2019t look like an Aura Farm backup');
     }catch(e){ toast('Could not read that file'); }
   };
   r.readAsText(f);
@@ -3191,7 +3093,7 @@ function restoreFromPaste(){
   if(!txt){ toast('Paste your backup JSON first'); return; }
   let obj=null;
   try{ obj=JSON.parse(txt); }catch(e){ toast('That isn\u2019t valid JSON \u2014 copy the whole file'); return; }
-  if(!obj||obj.v!==4){ toast('That doesn\u2019t look like a Prism backup'); return; }
+  if(!obj||obj.v!==4){ toast('That doesn\u2019t look like an Aura Farm backup'); return; }
   adoptState(obj);
 }
 function exportData(){ downloadSnapshot(false); }
@@ -3228,7 +3130,6 @@ function celebrateBurst(big){
     setTimeout(function(){el.remove();},760);
   }
 }
-function ptsStr(n){ return Math.round(n)+' pts'; }
 /* ===================== view mode ===================== */
 let viewMode='today';
 const VIEWS=['today','planning','notes','month','more'];
@@ -3244,6 +3145,299 @@ function panelExpanded(r){
   const def = !isViewingToday() ? !allDone
     : (r==='sunrise' ? (!allDone && nm<12*60) : (!allDone && nm>=17*60));
   return manualPanel[r]!==undefined?manualPanel[r]:def;
+}
+/* ===================== Prism Terminal — mobile shell =====================
+   The phone frame from the redesign: a sticky header (stardate, day-of-week score rings, four
+   tracker rings, day progress) and a four-tab bottom bar. It does NOT own navigation state — the
+   tabs call setView(), the same router the desktop tab strip uses, so there is exactly one idea
+   of which view is showing. Everything here reads the same state the desktop cards do. */
+let openSheetKind=null;
+/* stardate, purely decorative: years since 1946 + day-of-year + the fraction of the day elapsed */
+function stardate(){
+  const n=new Date();
+  const doy=Math.floor((n-new Date(n.getFullYear(),0,0))/86400000);
+  return 'SD '+(n.getFullYear()-1946)+String(doy).padStart(3,'0')+'.'+
+    Math.floor((n.getHours()*60+n.getMinutes())/144);
+}
+/* an SVG progress ring. pct 0..1, drawn from 12 o'clock via the -90deg rotate in CSS. */
+function ringSvg(pct,color,r,sw){
+  const C=2*Math.PI*r;
+  const off=C*(1-Math.max(0,Math.min(1,pct)));
+  return '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="'+r+'" fill="none" stroke="var(--glass-strong)" stroke-width="'+sw+'"></circle>'+
+    '<circle cx="50" cy="50" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+sw+'" '+
+    'stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'"></circle></svg>';
+}
+function scoreColor(sc){ return sc>=0.75?'var(--mint-deep)':sc>=0.45?'var(--aqua-deep)':'#3b6b47'; }
+/* the four tracker rings. Each returns {pct, color, glyph, value} and opens its sheet. */
+function trackerRings(){
+  const k=vday(), d=day(k);
+  const monthly=budgetMonthlyCents(), spent=spentInPeriod();
+  const f=foodScore(k);
+  const notesToday=(S.logEntries||[]).filter(function(n){return n.day===k;}).length;
+  const APPLE='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.2 8.3c-1 0-2 .5-2.9.5-.9 0-1.9-.5-3-.5-1.6 0-3.9 1.4-3.9 5 0 3.5 2.7 7.8 4.3 7.8.8 0 1.3-.5 2.5-.5s1.6.5 2.5.5c1.4 0 3.1-2.7 3.9-4.3-2.6-1.1-2.9-5.4.2-6.6-.9-1.2-2.2-1.9-3.6-1.9zM13 5.3c.7-.9 1.2-2.1 1-3.3-1.1.1-2.4.8-3.1 1.7-.7.8-1.3 2-1.1 3.2 1.2.1 2.5-.6 3.2-1.6z"></path></svg>';
+  const PENCIL='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20l1-4.5L15.5 5l3.5 3.5L8.5 19 4 20z"></path><path d="M13.2 6.8l3.5 3.5"></path></svg>';
+  return [
+    {kind:'money', glyph:'$', color:'var(--pink-deep)',
+     pct: monthly?Math.max(0,(monthly-spent))/monthly:0,
+     value: monthly?dollarsStr(Math.max(0,monthly-spent)):dollarsStr(spent)},
+    {kind:'food', glyph:APPLE, color:(f===null?'var(--ink-3)':f>=0.6?'var(--mint-deep)':f>=0.35?'var(--pink-deep)':'var(--alert)'),
+     pct:(f===null?0:f), value:(f===null?'—':Math.round(f*100)+'%')},
+    {kind:'water', glyph:'≋', color:'var(--aqua-deep)',
+     pct: Math.min(1,d.water/goalOn(k)), value: d.water+'oz'},
+    {kind:'notes', glyph:PENCIL, color:'var(--mint-deep)',
+     pct: notesToday?1:0, value: notesToday?notesToday+' logged':'—'},
+  ];
+}
+function renderPrismShell(){
+  const host=document.getElementById('prismShell');
+  if(!host) return;
+  const k=vday(), d=day(k);
+  const p=k.split('-').map(Number), dt=new Date(p[0],p[1]-1,p[2]);
+  /* the week containing the viewed day, Sunday-first to match the design */
+  const wkStart=new Date(dt); wkStart.setDate(dt.getDate()-dt.getDay());
+  const letters=['S','M','T','W','T','F','S'];
+  let dots='';
+  for(let i=0;i<7;i++){
+    const dd=new Date(wkStart); dd.setDate(wkStart.getDate()+i);
+    const dk=dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+    const sc=dayScore(dk), sel=dk===k;
+    dots+='<button class="psdot'+(sel?' on':'')+'" onclick="setViewDay(\''+dk+'\')" title="'+dk+'">'+
+      '<span class="rw">'+ringSvg(sc,scoreColor(sc),43,9)+'<span class="face">'+letters[i]+'</span></span></button>';
+  }
+  let rings='';
+  trackerRings().forEach(function(r){
+    rings+='<button class="psring" onclick="openSheet(\''+r.kind+'\')">'+
+      '<span class="rw">'+ringSvg(r.pct,r.color,43,7)+
+      '<span class="gl" style="color:'+r.color+'">'+r.glyph+'</span></span>'+
+      '<span class="vl">'+r.value+'</span></button>';
+  });
+  const blocks=(d.blocks||[]).filter(function(b){ return blockTasksFor(b,k).length; });
+  const cleared=blocks.filter(function(b){ return blockTasksFor(b,k).every(function(t){return itemDone(t,k);}); }).length;
+  const pct=blocks.length?Math.round(cleared/blocks.length*100):0;
+  host.innerHTML=
+    '<div class="pshead">'+
+      '<div class="psbar"><span>PRISM MK VII · LOCAL</span><span>'+stardate()+'</span></div>'+
+      '<div class="psdayrow">'+
+        '<div class="psnum"><div class="mo">'+dt.toLocaleDateString(undefined,{month:'short'}).toUpperCase()+'</div>'+
+        '<div class="dd">'+dt.getDate()+'</div></div>'+
+        '<div class="psweek">'+
+          '<button class="psarrow" onclick="shiftViewDay(-7)">←</button>'+dots+
+          '<button class="psarrow" onclick="shiftViewDay(7)">→</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="psrings">'+rings+'</div>'+
+      '<div class="psprog"><div class="track"><div class="fill" style="width:'+pct+'%"></div></div>'+
+        '<span class="cap">'+cleared+'/'+blocks.length+' · '+pct+'%</span></div>'+
+    '</div>';
+  renderSheets();
+}
+/* ===================== tracker sheets ===================== */
+function openSheet(kind){ openSheetKind=kind; mealDraft=[]; render(); }
+function closeSheet(){ openSheetKind=null; render(); }
+let mealDraft=[];
+function toggleMealCat(c){
+  mealDraft=mealDraft.indexOf(c)>=0?mealDraft.filter(function(x){return x!==c;}):mealDraft.concat([c]);
+  render();
+}
+function saveMeal(){
+  if(!mealDraft.length) return;
+  const d=day(vday());
+  d.meals.push({id:'ml'+Date.now(), at:Date.now(), cats:mealDraft.slice()});
+  mealDraft=[]; save(); render(); toast('Meal logged');
+}
+function delMeal(id,ev){ if(ev)ev.stopPropagation(); if(!arm('ml:'+id)) return;
+  const d=day(vday()); d.meals=d.meals.filter(function(m){return m.id!==id;});
+  armed=null; save(); render();
+}
+function saveNote(){
+  const el=document.getElementById('noteDraft'); if(!el) return;
+  const v=(el.value||'').trim(); if(!v) return;
+  S.logEntries.unshift({id:'lg'+Date.now(), at:Date.now(), day:vday(), text:v});
+  el.value=''; save(); render(); toast('Entry filed');
+}
+function setNoteText(id,v){
+  const n=(S.logEntries||[]).filter(function(x){return x.id===id;})[0];
+  if(!n) return; n.text=v; save();
+}
+function delNote(id,ev){ if(ev)ev.stopPropagation(); if(!arm('lg:'+id)) return;
+  S.logEntries=S.logEntries.filter(function(n){return n.id!==id;});
+  armed=null; save(); render();
+}
+function submitTxn(){
+  const n=document.getElementById('txnName'), a=document.getElementById('txnAmt'),
+        dd=document.getElementById('txnDay'), c=document.getElementById('txnCat');
+  const name=(n&&n.value||'').trim(), amt=Math.round((parseFloat(a&&a.value)||0)*100);
+  if(!name||amt<=0) return;
+  logSpend(name,amt,(dd&&dd.value)||vday(),(c&&c.value)||'Uncategorized');
+  n.value=''; a.value='';
+}
+function submitTxnCat(){
+  const el=document.getElementById('newTxnCat'); if(!el) return;
+  addTxnCat(el.value); el.value='';
+}
+const FOOD_CHIPS=[
+  {id:'veggies',cls:'good'},{id:'protein',cls:'good'},{id:'berries',cls:'good'},
+  {id:'greens',cls:'good'},{id:'dairy',cls:'good'},{id:'grains',cls:''},
+  {id:'starch',cls:'bad'},{id:'fried',cls:'bad'},{id:'sugary',cls:'bad'}
+];
+function sheetHead(title,color){
+  return '<div class="pssheethead"><span class="ttl" style="color:'+color+'">'+title+'</span>'+
+    '<button onclick="closeSheet()">✕</button></div>';
+}
+function renderSheets(){
+  const scrim=document.getElementById('sheetScrim');
+  if(scrim) scrim.classList.toggle('open',!!openSheetKind);
+  ['Money','Water','Food','Notes'].forEach(function(n){
+    const el=document.getElementById('sheet'+n);
+    if(el) el.classList.toggle('open',openSheetKind===n.toLowerCase());
+  });
+  const k=vday(), d=day(k);
+  /* --- money --- */
+  const mEl=document.getElementById('sheetMoney');
+  if(mEl&&openSheetKind==='money'){
+    const monthly=budgetMonthlyCents(), spent=spentInPeriod(), left=monthly-spent;
+    const rows=(S.txns||[]).slice(0,25).map(function(t){
+      const a=armed==='sp:'+t.id;
+      return '<div class="psrow"><div style="flex:1;min-width:0">'+
+        '<div class="nm">'+String(t.name).replace(/</g,'&lt;')+'</div>'+
+        '<div class="mt">'+String(t.cat||'').toUpperCase()+' · '+t.day+'</div></div>'+
+        '<span class="amt">−'+dollarsStr(t.amountCents)+'</span>'+
+        '<button class="del" onclick="delSpend(\''+t.id+'\',event)">'+(a?'!':'✕')+'</button></div>';
+    }).join('')||'<div class="mt" style="color:var(--ink-3);font-size:11px">nothing logged yet</div>';
+    mEl.innerHTML=sheetHead('RESOURCE ALLOCATION','var(--pink-deep)')+
+      '<div class="psbig"><span class="v" style="color:var(--pink-deep)">'+
+        (monthly?dollarsStr(Math.max(0,left)):dollarsStr(spent))+'</span>'+
+        '<span class="u">'+(monthly?'REMAINING OF '+dollarsStr(monthly):'SPENT THIS PERIOD')+'</span></div>'+
+      '<div class="track" style="height:7px;background:var(--glass-strong);margin-top:9px">'+
+        '<div style="height:100%;background:var(--pink-deep);width:'+
+        (monthly?Math.min(100,Math.max(0,Math.round(spent/monthly*100))):0)+'%"></div></div>'+
+      '<div class="pssec">&gt; monthly budget</div>'+
+      '<input class="psin" id="budgetIn" inputmode="decimal" placeholder="0.00" value="'+
+        (monthly?(monthly/100).toFixed(2):'')+'" onchange="setBudgetMonthly(this.value)">'+
+      '<div class="pssec">&gt; log transaction</div>'+
+      '<input class="psin" id="txnName" placeholder="DESCRIPTION">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">'+
+        '<input class="psin" id="txnAmt" inputmode="decimal" placeholder="AMOUNT $">'+
+        '<input class="psin" id="txnDay" type="date" value="'+k+'">'+
+      '</div>'+
+      '<select class="psin" id="txnCat" style="margin-top:8px">'+
+        (S.txnCats||[]).map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('')+
+      '</select>'+
+      '<button class="psbtn" onclick="submitTxn()">RECORD TRANSACTION</button>'+
+      '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px">'+
+        '<input class="psin" id="newTxnCat" placeholder="NEW CATEGORY">'+
+        '<button class="pschip" onclick="submitTxnCat()">+ ADD</button></div>'+
+      '<div class="pslist">'+rows+'</div>';
+  }
+  /* --- water: reuses addWater/d.log so undo, streaks and freezes keep working --- */
+  const wEl=document.getElementById('sheetWater');
+  if(wEl&&openSheetKind==='water'){
+    const g=goalOn(k), v=vessel();
+    wEl.innerHTML=sheetHead('HYDRATION LEVELS','var(--aqua-deep)')+
+      '<div class="psbig"><span class="v" style="color:var(--aqua-deep)">'+d.water+'oz</span>'+
+        '<span class="u">OF '+g+'oz GOAL</span></div>'+
+      '<div class="track" style="height:7px;background:var(--glass-strong);margin-top:9px">'+
+        '<div style="height:100%;background:var(--aqua-deep);width:'+Math.min(100,Math.round(d.water/g*100))+'%"></div></div>'+
+      '<button class="psbtn" onclick="addWater(\'full\')">+ LOG '+v.oz+'oz CUP</button>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<button class="psghost" onclick="addWater(\'half\')">+ HALF CUP</button>'+
+        '<button class="psghost" onclick="addWater(\'undo\')">UNDO</button></div>'+
+      '<div class="pssec">&gt; calibrate</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<div><div class="mt" style="font-size:9px;letter-spacing:1.5px;color:var(--ink-3);margin-bottom:5px">CUP SIZE (OZ)</div>'+
+          '<input class="psin" inputmode="numeric" value="'+v.oz+'" onchange="setVesselOz(this.value)"></div>'+
+        '<div><div class="mt" style="font-size:9px;letter-spacing:1.5px;color:var(--ink-3);margin-bottom:5px">DAILY GOAL (OZ)</div>'+
+          '<input class="psin" inputmode="numeric" value="'+waterGoal()+'" onchange="setWaterGoal(this.value)"></div>'+
+      '</div>'+
+      '<div class="pssec">&gt; streak</div>'+
+      '<div class="mt" style="color:var(--ink-2);font-size:11.5px">'+S.waterStreak+
+        ' day streak · best '+S.waterBest+' · '+S.freezes+' freeze'+(S.freezes===1?'':'s')+'</div>';
+  }
+  /* --- food --- */
+  const fEl=document.getElementById('sheetFood');
+  if(fEl&&openSheetKind==='food'){
+    const f=foodScore(k);
+    const verdict=f===null?'NO DATA':f>=0.75?'CLEAN':f>=0.5?'BALANCED':f>=0.3?'HEAVY':'FLAGGED';
+    const col=f===null?'var(--ink-3)':f>=0.6?'var(--mint-deep)':f>=0.35?'var(--pink-deep)':'var(--alert)';
+    const meals=(d.meals||[]).slice().reverse().map(function(m){
+      const a=armed==='ml:'+m.id;
+      const t=new Date(m.at).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+      return '<div class="psrow"><div style="flex:1;min-width:0">'+
+        '<div class="nm">'+(m.cats||[]).join(' · ')+'</div>'+
+        '<div class="mt">'+t+'</div></div>'+
+        '<button class="del" onclick="delMeal(\''+m.id+'\',event)">'+(a?'!':'✕')+'</button></div>';
+    }).join('')||'<div class="mt" style="color:var(--ink-3);font-size:11px">nothing logged today</div>';
+    fEl.innerHTML=sheetHead('NUTRITIONAL INTAKE',col)+
+      '<div class="psbig"><span class="v" style="font-size:24px;color:'+col+'">'+verdict+'</span>'+
+        '<span class="u">'+(d.meals||[]).length+' MEAL'+((d.meals||[]).length===1?'':'S')+' TODAY</span></div>'+
+      '<div class="pssec">&gt; select composition</div>'+
+      '<div class="pschips">'+FOOD_CHIPS.map(function(c){
+        return '<button class="pschip '+c.cls+(mealDraft.indexOf(c.id)>=0?' on':'')+
+          '" onclick="toggleMealCat(\''+c.id+'\')">'+c.id.toUpperCase()+'</button>';
+      }).join('')+'</div>'+
+      '<button class="psbtn" onclick="saveMeal()">LOG MEAL</button>'+
+      '<div class="pslist">'+meals+'</div>';
+  }
+  /* --- notes --- */
+  const nEl=document.getElementById('sheetNotes');
+  if(nEl&&openSheetKind==='notes'){
+    const list=(S.logEntries||[]).slice(0,40).map(function(n){
+      const a=armed==='lg:'+n.id;
+      const when=new Date(n.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      return '<div class="psrow"><div style="flex:1;min-width:0">'+
+        '<div class="mt">'+when.toUpperCase()+'</div>'+
+        '<textarea class="psin" style="margin-top:4px;min-height:60px" onchange="setNoteText(\''+n.id+'\',this.value)">'+
+        String(n.text).replace(/</g,'&lt;')+'</textarea></div>'+
+        '<button class="del" onclick="delNote(\''+n.id+'\',event)">'+(a?'!':'✕')+'</button></div>';
+    }).join('')||'<div class="mt" style="color:var(--ink-3);font-size:11px">no entries yet</div>';
+    nEl.innerHTML=sheetHead('PERSONAL LOG ENTRY','var(--mint-deep)')+
+      '<textarea class="psin" id="noteDraft" style="height:96px;margin-top:12px" placeholder="BEGIN DICTATION…"></textarea>'+
+      '<button class="psbtn" onclick="saveNote()">FILE ENTRY</button>'+
+      '<div class="pslist">'+list+'</div>';
+  }
+}
+/* The SCAN tab's priority directive: whatever block is happening right now, with a countdown
+   ring, its task list and the lock-in button. It is a *view* of the current block, not a second
+   place to store one — the tasks are blockTasksFor(), the toggle is toggleUnit(), ENGAGE is the
+   existing lockIn(). Renders nothing when no block is running, or when you are looking at another
+   day, since "now" only means something on today. */
+function renderPrismFocus(){
+  const host=document.getElementById('prismFocus');
+  if(!host) return;
+  if(!isViewingToday()||viewMode!=='today'){ host.innerHTML=''; return; }
+  const d=day(vday());
+  const b=(d.blocks||[]).filter(function(x){return isCurrentBlock(x);})[0];
+  if(!b){ host.innerHTML=''; return; }
+  const st=toMin(b.start), dur=blockDur(b), nm=nowMinutes()%1440;
+  const leftMin=Math.max(0,st+dur-nm);
+  const pct=dur?Math.min(1,(nm-st)/dur):0;
+  const tasks=blockTasksFor(b,vday());
+  const done=tasks.filter(function(t){return itemDone(t,vday());}).length;
+  const locked=focusBlockId===b.id;
+  host.innerHTML=
+    '<div class="pfcard">'+
+      '<div class="pfhead"><span class="pfk">PRIORITY DIRECTIVE</span>'+
+        '<span class="pfst">'+(locked?'ENGAGED':'ON SCHEDULE')+'</span></div>'+
+      '<div class="pfbody">'+
+        '<div class="pfring">'+ringSvg(pct,'var(--mint-deep)',42,8)+
+          '<span class="pfmin"><b>'+leftMin+'</b><i>MIN</i></span></div>'+
+        '<div class="pfmeta">'+
+          '<div class="pft">'+b.start+' '+String(b.focus||b.calTitle||'open block').replace(/</g,'&lt;')+'</div>'+
+          '<div class="pfsub">'+done+'/'+tasks.length+' SUBROUTINES</div>'+
+        '</div>'+
+      '</div>'+
+      (tasks.length?'<div class="pftasks">'+tasks.map(function(t){
+        const dn=itemDone(t,vday());
+        return '<button class="pftask'+(dn?' done':'')+'" onclick="toggleUnit(\''+t.id+'\')">'+
+          '<span class="bx">'+(dn?'✓':'')+'</span>'+
+          '<span class="tx">'+String(t.text).replace(/</g,'&lt;')+'</span></button>';
+      }).join('')+'</div>':'')+
+      '<div class="pfbtns">'+
+        '<button class="pfgo" onclick="'+(locked?'exitFocus()':'lockIn(\''+b.id+'\')')+'">'+
+          (locked?'❚❚ HOLD':'▶ ENGAGE')+'</button>'+
+        '<button class="pfalt" onclick="toggleBlock(\''+b.id+'\')">OPEN</button>'+
+      '</div>'+
+    '</div>';
 }
 /* ===================== render ===================== */
 function ritualFullyDone(r){
@@ -3308,21 +3502,48 @@ function blockProgressPct(b){
   if(nm>=e) return 100;
   return Math.round((nm-s)/(e-s)*100);
 }
-/* pure grouping pass over a day's blocks: every consecutive run of already-past blocks collapses
-   into one toggle row, regardless of how many blocks are in it — "earlier today" is one line
-   until you ask to see it, not one line per block. Kept side-effect-free and separate from
-   renderTimeline so it's directly testable. */
+function fmtDurShort(min){
+  const h=Math.floor(min/60), m=Math.round(min%60);
+  if(h&&m) return h+'h '+m+'m';
+  if(h) return h+'h';
+  return m+'m';
+}
+/* an "unassigned" block is filler time nobody has put anything in — it's not the same as a real
+   block that got fully cleared, so it groups separately (and regardless of whether its time has
+   passed yet — a wide-open afternoon collapses just as readily as a wide-open morning that's
+   already gone by) */
+function isUnassignedBlock(b){ return !!b.auto&&isEmptyBlock(b); }
+/* pure grouping pass over a day's blocks: decides which consecutive runs collapse into a single
+   toggle row (unassigned gaps, and separately cleared-block runs) versus rendering individually.
+   Kept side-effect-free and separate from renderTimeline so it's directly testable. */
 function groupTimelineSegments(blocks){
   const segs=[];
   let i=0;
   while(i<blocks.length){
     const b=blocks[i];
-    if(isPastBlock(b)){
+    if(isUnassignedBlock(b)){
       let j=i;
-      while(j<blocks.length&&isPastBlock(blocks[j])) j++;
+      while(j<blocks.length&&isUnassignedBlock(blocks[j])) j++;
       const run=blocks.slice(i,j);
-      segs.push({type:'past', run:run, totalMin:run.reduce(function(a,bb){return a+blockDur(bb);},0)});
-      i=j; continue;
+      const totalMin=run.reduce(function(a,bb){return a+blockDur(bb);},0);
+      if(run.length>=2&&totalMin>=UNASSIGNED_COLLAPSE_MIN){
+        segs.push({type:'gap', run:run, totalMin:totalMin});
+        i=j; continue;
+      }
+    }
+    /* every block whose end time has already passed condenses into one toggle, whether or not
+       everything inside it got done — "past" is a clock fact, not a completion fact. This is
+       broader than the old cleared-only grouping (isBlockCleared required 100% done), which is
+       exactly the change phase 1 asked for: a half-finished 9am block still collapses once it's
+       10am, instead of sitting open and demanding attention for something that's already over. */
+    if(isPastBlock(b)&&!isUnassignedBlock(b)){
+      let j=i;
+      while(j<blocks.length&&isPastBlock(blocks[j])&&!isUnassignedBlock(blocks[j])) j++;
+      const run=blocks.slice(i,j);
+      if(run.length>=2){
+        segs.push({type:'past', run:run, totalMin:run.reduce(function(a,bb){return a+blockDur(bb);},0)});
+        i=j; continue;
+      }
     }
     segs.push({type:'block', run:[b]});
     i++;
@@ -3331,35 +3552,17 @@ function groupTimelineSegments(blocks){
 }
 let manualRollup={};
 function toggleRollup(id){ manualRollup[id]=!manualRollup[id]; render(); }
-/* a compact, non-time-proportional row for a folded-past block — once it's behind "now" its exact
-   pixel position stops mattering, you just want to skim what happened and reopen one if needed */
-function pastBlockRowHTML(b){
-  const quests=blockQuests(b), btasks=blockTasksFor(b), ptasks=projectBlockTasks(b);
-  const total=quests.length+btasks.length;
-  const done=quests.filter(function(q){return itemDone(q);}).length+btasks.filter(function(t){return itemDone(t);}).length;
-  const previewText=(b.type==='project'&&ptasks.length)?ptasks[0].text:(b.focus||b.calTitle||'(untitled)');
-  return '<div class="pastrow'+(isBlockCleared(b)?' cleared':'')+'" onclick="toggleBlock(\''+b.id+'\')">'+
-    '<span class="gtime">'+b.start+'–'+(b.end||'')+'</span>'+
-    (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
-    '<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>'+
-    (total?'<span class="progdot">'+done+'/'+total+'</span>':'')+
-    '</div>';
-}
 /* one small absolutely-positioned box per block, sized and placed by its real clock time on the
-   fixed grid — no more elastic floor/ceiling. Clicking it opens the inline detail view instead of
-   growing the box itself, which is what keeps the grid actually proportional: an expanded block
-   used to blow past its real time-slot height, which a Google-Calendar-style grid can't allow.
-   gridOrigin defaults to DAY_START (a full day, e.g. viewing a past/future day) but the live
-   "now onward" grid for today passes its own origin so folded-past time doesn't eat vertical
-   space — see renderTimeline. */
-function blockGridBoxHTML(b,openId,gridOrigin){
-  gridOrigin=(gridOrigin===undefined)?DAY_START:gridOrigin;
+   fixed grid — no more elastic floor/ceiling. Clicking it opens the side detail panel instead of
+   growing the box inline, which is what keeps the grid actually proportional: an expanded block
+   used to blow past its real time-slot height, which a Google-Calendar-style grid can't allow. */
+function blockGridBoxHTML(b,openId){
   const cur=isCurrentBlock(b), past=!cur&&isPastBlock(b), empty=isEmptyBlock(b), cleared=isBlockCleared(b);
   const col=blockColor(b);
   const isOpen=openId===b.id;
-  const startMin=Math.max(gridOrigin,toMin(b.start));
+  const startMin=Math.max(DAY_START,toMin(b.start));
   const endMin=Math.min(DAY_END,toMin(b.end||fromMin(toMin(b.start)+60)));
-  const top=minToPx(startMin,gridOrigin), heightPx=Math.max(20,minToPx(endMin,gridOrigin)-top);
+  const top=minToPx(startMin), heightPx=Math.max(20,minToPx(endMin)-top);
   const quests=blockQuests(b), btasks=blockTasksFor(b), ptasks=projectBlockTasks(b);
   /* ptasks are pulled fresh from the bank each render and are never "done" by definition (a done
      one drops out of the pull), so they'd only ever pad the denominator without a matching
@@ -3371,19 +3574,24 @@ function blockGridBoxHTML(b,openId,gridOrigin){
   const previewText=(b.type==='project'&&ptasks.length)?ptasks[0].text:(b.focus||b.calTitle||'');
   let styleAttr='top:'+top+'px;height:'+heightPx+'px';
   if(!empty) styleAttr+=';background:'+col.bg+';border-color:'+col.edge;
+  /* an empty auto-filler gets regenerated from scratch by buildGaps() every render (see the
+     comment on that function), so dragging its edge would just get silently undone on the next
+     render — resize handles only make sense on a block that's actually real. */
+  const canResize=!isUnassignedBlock(b);
+  /* mousedown only — no ontouchstart here. Every real block has one of these 8px strips at each
+     edge, and a scroll swipe on a phone routinely starts with a finger right on one, silently
+     turning "I'm scrolling" into "I'm resizing this block." Touch users still get to change a
+     block's time via the start/end inputs in its detail panel. */
   return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
     'ondragover="event.preventDefault();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onBlockDrop(event,\''+b.id+'\')" '+
     'onclick="toggleBlock(\''+b.id+'\')" title="'+(empty?'click to add a focus':'click for details')+'">'+
-    '<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'top\')"></div>'+
+    (canResize?'<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')"></div>':'')+
     '<span class="gtime">'+b.start+'–'+(b.end||'')+'</span>'+
     (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon" title="'+BLOCK_TYPE_LABEL[b.type]+' block">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
     (empty&&!previewText?'<span class="gfocus emptyhint">+ add focus</span>':'<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>')+
     (totalCount?'<span class="progdot">'+doneCount+'/'+totalCount+'</span>':'')+
     (b.fromCal?'<span class="caltag">cal</span>':'')+
-    /* the current block is the one you actually want to jump into right now — a direct lock-in
-       button here skips the "click to expand, then click lock in" detour */
-    (cur?'<button class="lockbtn" title="lock in" onclick="event.stopPropagation();lockIn(\''+b.id+'\')">🔒</button>':'')+
-    '<div class="reshandle bottom" onmousedown="startBlockResize(event,\''+b.id+'\',\'bottom\')" ontouchstart="startBlockResize(event,\''+b.id+'\',\'bottom\')"></div>'+
+    (canResize?'<div class="reshandle bottom" onmousedown="startBlockResize(event,\''+b.id+'\',\'bottom\')"></div>':'')+
     '</div>';
 }
 /* the detail panel: subtasks, notes, the editable time fields, delete — everything that used to
@@ -3411,26 +3619,22 @@ function renderBlockDetailPanel(){
     '<button class="rowbtn" style="opacity:.6" title="skip everything in this block — streak safe" onclick="skipBlock(\''+b.id+'\',event)">skip all</button>'+
     '</div>'+
     '<div class="bdtime">'+
-      '<select onchange="setBlockStart(\''+b.id+'\',this.value)">'+timeOptionsHTML(b.start)+'</select>–'+
-      '<select onchange="setBlockEnd(\''+b.id+'\',this.value)">'+timeOptionsHTML(b.end||'')+'</select>'+
+      '<input type="time" value="'+b.start+'" onchange="setBlockStart(\''+b.id+'\',this.value)">–'+
+      '<input type="time" value="'+(b.end||'')+'" onchange="setBlockEnd(\''+b.id+'\',this.value)">'+
     '</div>'+
     '<div class="bdfocus" contenteditable="true" data-ph="focus…" onblur="setFocus(\''+b.id+'\',this.textContent)">'+String(b.focus||'').replace(/</g,'&lt;')+'</div>';
   if(isCurrentBlock(b)) h+='<div class="nowline">'+hhmm(new Date())+' now · '+pct+'% through this block</div>';
-  /* a single-focus block (a meeting, a lecture) has nothing to check off — mirrors the same
-     gate applied in focus mode (renderFocusSession) so tasks never silently vanish on lock-in */
-  if(b.type!=='single'){
-    h+='<div class="bdtasks">';
-    /* whatever's still open floats to the top; done and skipped rows stay put but settle
-       underneath, so a half-finished routine reads at a glance. Project blocks additionally pull
-       in whatever's next up from the task bank in their category — completing/skipping the top one
-       just naturally promotes the next, no separate "current task" pointer to maintain. */
-    sortSettledLast(quests.concat(btasks)).forEach(function(t){ h+=taskRowHTML(t,'block'); });
-    ptasks.forEach(function(t){ h+=taskRowHTML(t,'block'); });
-    h+='</div>';
-    h+='<div class="addtiny"><input id="tinyIn-'+b.id+'" placeholder="'+(b.routine?'add a habit to this routine, press enter…':'add a task to this block, press enter…')+'" maxlength="80" onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddBlockTask(\''+b.id+'\')}">'+
-       '<button class="btn tiny soft" onclick="quickAddBlockTask(\''+b.id+'\')">+</button></div>';
-  }
-  h+='<textarea class="bnotes" placeholder="notes…" onchange="setNotes(\''+b.id+'\',this.value)">'+(b.notes||'')+'</textarea>';
+  h+='<div class="bdtasks">';
+  /* whatever's still open floats to the top; done and skipped rows stay put but settle
+     underneath, so a half-finished routine reads at a glance. Project blocks additionally pull
+     in whatever's next up from the task bank in their category — completing/skipping the top one
+     just naturally promotes the next, no separate "current task" pointer to maintain. */
+  sortSettledLast(quests.concat(btasks)).forEach(function(t){ h+=taskRowHTML(t,'block'); });
+  ptasks.forEach(function(t){ h+=taskRowHTML(t,'block'); });
+  h+='</div>';
+  h+='<div class="addtiny"><input id="tinyIn-'+b.id+'" placeholder="'+(b.routine?'add a habit to this routine, press enter…':'add a task to this block, press enter…')+'" maxlength="80" onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddBlockTask(\''+b.id+'\')}">'+
+     '<button class="btn tiny soft" onclick="quickAddBlockTask(\''+b.id+'\')">+</button></div>'+
+     '<textarea class="bnotes" placeholder="notes…" onchange="setNotes(\''+b.id+'\',this.value)">'+(b.notes||'')+'</textarea>';
   panel.innerHTML=h;
 }
 /* ===================== lock-in focus mode =====================
@@ -3458,40 +3662,19 @@ function focusTick(){
   if(!focusState||!focusBlockId||!blockOf(focusBlockId)){ exitFocus(); return; }
   if(focusState.onBreak){
     focusState.breakSec--;
-    if(focusState.breakSec<=0){ focusState.onBreak=false; focusState.breakSec=0; renderFocusSession(); return; }
+    if(focusState.breakSec<=0){ focusState.onBreak=false; focusState.breakSec=0; }
   } else {
     focusState.activeSec++;
     /* a completed 30-minute segment pays out and offers a break, whether or not you take it —
        the reward is for the time actually spent, the break is just a wellness nudge on top */
-    if(focusState.activeSec%1800===0){ awardFocusSegment(); focusState.breakOffered=true; renderFocusSession(); return; }
+    if(focusState.activeSec%1800===0){ awardFocusSegment(); focusState.breakOffered=true; }
   }
-  /* the common case, every second: patch just the numbers in place rather than the full
-     renderFocusSession() rebuild below — that does el.innerHTML= on the whole overlay, which
-     destroys and recreates whatever's focused (the notes textarea, the quick-capture input, a
-     task's editable title), forcing a blur that instantly dismisses the mobile keyboard mid-
-     type. A full rebuild only happens above, on the two actual structural transitions (a break
-     newly offered, a break ending) — not on the silent per-second tick. */
-  updateFocusTickDisplay();
-}
-function updateFocusTickDisplay(){
-  const b=focusBlockId&&blockOf(focusBlockId); if(!b) return;
-  const pct=blockProgressPct(b);
-  const fill=document.getElementById('focusBarFill'); if(fill) fill.style.width=pct+'%';
-  const meta=document.getElementById('focusMeta');
-  if(meta){
-    const d=day(vday());
-    meta.textContent=b.start+'–'+(b.end||'')+' · locked in '+mmss(focusState.activeSec)+
-      (d.focusSegs&&d.focusSegs[b.id]?' · '+d.focusSegs[b.id]+' segment'+(d.focusSegs[b.id]===1?'':'s')+' earned':'');
-  }
-  if(focusState.onBreak){
-    const breakBox=document.getElementById('focusBreakBox');
-    if(breakBox) breakBox.textContent='🌿 on a break — back in '+mmss(focusState.breakSec);
-  }
+  renderFocusSession();
 }
 function awardFocusSegment(){
   const d=day(vday());
   d.focusSegs[focusBlockId]=(d.focusSegs[focusBlockId]||0)+1;
-  earn(CENTS.pomo); save();
+  save();
 }
 function startFocusBreak(){ if(!focusState) return; focusState.breakOffered=false; focusState.onBreak=true; focusState.breakSec=300; renderFocusSession(); }
 function dismissFocusBreak(){ if(!focusState) return; focusState.breakOffered=false; renderFocusSession(); }
@@ -3523,10 +3706,10 @@ function renderFocusSession(){
   h+='<div class="focustop"><div class="focustitle">'+(BLOCK_TYPE_ICON[b.type]||'')+' '+
      String(b.focus||b.calTitle||'untitled').replace(/</g,'&lt;')+'</div>'+
      '<button class="btn tiny ghost" onclick="exitFocus()">✕ done for now</button></div>';
-  h+='<div class="focusbar"><div class="focusbarfill" id="focusBarFill" style="width:'+pct+'%"></div></div>';
-  h+='<div class="focusmeta" id="focusMeta">'+b.start+'–'+(b.end||'')+' · locked in '+mmss(focusState.activeSec)+
+  h+='<div class="focusbar"><div class="focusbarfill" style="width:'+pct+'%"></div></div>';
+  h+='<div class="focusmeta">'+b.start+'–'+(b.end||'')+' · locked in '+mmss(focusState.activeSec)+
      (d.focusSegs&&d.focusSegs[b.id]?' · '+d.focusSegs[b.id]+' segment'+(d.focusSegs[b.id]===1?'':'s')+' earned':'')+'</div>';
-  if(focusState.onBreak) h+='<div class="focusbreak" id="focusBreakBox">🌿 on a break — back in '+mmss(focusState.breakSec)+'</div>';
+  if(focusState.onBreak) h+='<div class="focusbreak">🌿 on a break — back in '+mmss(focusState.breakSec)+'</div>';
   else if(focusState.breakOffered)
     h+='<div class="focusbreakoffer">30 minutes in — take a 5 minute break?'+
        '<button class="btn tiny soft" onclick="startFocusBreak()">take it</button>'+
@@ -3539,7 +3722,7 @@ function renderFocusSession(){
        '<div class="qempty">nothing pinned to this block yet</div>')+'</div>';
   }
   h+='<div class="focusaside">';
-  h+='<div class="focuswater">💧 '+d.water+' / '+WATER_GOAL+' oz'+
+  h+='<div class="focuswater">💧 '+d.water+' / '+goalOn(vday())+' oz'+
      '<button class="btn tiny soft" onclick="addWater(\'full\')">+cup</button></div>';
   h+='<textarea class="focusnotes" placeholder="notes…" onchange="setNotes(\''+b.id+'\',this.value)">'+(b.notes||'')+'</textarea>';
   h+='<div class="focusadd"><input id="focusCaptureIn" placeholder="something for later, so it doesn’t derail the session…" maxlength="120" '+
@@ -3551,60 +3734,65 @@ function renderFocusSession(){
 function renderTimeline(){
   const d=day(vday());
   const openId=openBlockId();
-  const viewingToday=isViewingToday();
-  /* today only: everything already past folds into one line, and the live grid's own coordinate
-     origin shifts to "now" (snapped to a quarter hour) so that folded time costs zero vertical
-     space instead of pushing the current block down the page. Any other day (past or future)
-     renders as one plain full-day grid — folding only matters when there's a "now" inside it. */
-  let liveOrigin=DAY_START, pastRun=null;
-  if(viewingToday){
-    const segs=groupTimelineSegments(d.blocks);
-    pastRun=(segs[0]&&segs[0].type==='past')?segs[0].run:null;
-    if(pastRun) liveOrigin=Math.min(DAY_END,snap15(nowMinutes()%1440));
-  }
-  const liveBlocks=viewingToday?d.blocks.filter(function(b){return !isPastBlock(b);}):d.blocks;
-  let h='';
-  if(pastRun&&pastRun.length){
-    const rk='pastday-'+vday(), expanded=!!manualRollup[rk];
-    h+='<div class="pastfold" onclick="toggleRollup(\''+rk+'\')">'+(expanded?'▾ ':'▸ ')+
-       pastRun[0].start+'–'+fromMin(liveOrigin)+' · '+pastRun.length+' block'+(pastRun.length===1?'':'s')+' earlier today</div>';
-    if(expanded) h+='<div class="pastfoldbody">'+pastRun.map(pastBlockRowHTML).join('')+'</div>';
-  }
-  const totalPx=Math.round((DAY_END-liveOrigin)*gridPxPerMin());
-  let axis='', body='';
-  const axisStartHour=Math.ceil(liveOrigin/60)*60;
-  for(let m=axisStartHour;m<=DAY_END;m+=60){ axis+='<span class="gh" style="top:'+minToPx(m,liveOrigin)+'px">'+fromMin(m)+'</span>'; body+='<div class="gridline" style="top:'+minToPx(m,liveOrigin)+'px"></div>'; }
-  liveBlocks.forEach(function(b){ body+=blockGridBoxHTML(b,openId,liveOrigin); });
-  if(!liveBlocks.length) body+='<div class="qempty gridempty">nothing on the calendar yet — drag to add a block</div>';
+  let axis='';
+  for(let m=DAY_START;m<=DAY_END;m+=60) axis+='<span class="gh" style="top:'+minToPx(m)+'px">'+fromMin(m)+'</span>';
+  let body='';
+  for(let m=DAY_START;m<=DAY_END;m+=60) body+='<div class="gridline" style="top:'+minToPx(m)+'px"></div>';
+  groupTimelineSegments(d.blocks).forEach(function(seg){
+    const segStartMin=toMin(seg.run[0].start);
+    const segEndMin=toMin(seg.run[seg.run.length-1].end||fromMin(segStartMin+60));
+    const top=minToPx(Math.max(DAY_START,segStartMin)), height=Math.max(20,minToPx(Math.min(DAY_END,segEndMin))-top);
+    if(seg.type==='gap'){
+      const rk='gap-'+seg.run[0].id, expanded=!!manualRollup[rk];
+      if(!expanded){
+        body+='<div class="gaprollupabs" style="top:'+top+'px;height:'+height+'px" onclick="toggleRollup(\''+rk+'\')">'+
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">▸ '+seg.run[0].start+'–'+seg.run[seg.run.length-1].end+' · '+fmtDurShort(seg.totalMin)+' open</span>'+
+          '<button class="btn tiny ghost" onclick="event.stopPropagation();createBlockAt(\''+seg.run[0].start+'\','+pickOpenBlockDur(seg.totalMin)+')">+</button>'+
+          '</div>';
+      }else{
+        /* the re-collapse control lives in the axis column, not the body, so it never overlaps
+           the individual blocks it's sitting next to — those already fill this exact span */
+        axis+='<span class="gaxis-toggle" style="top:'+top+'px" onclick="toggleRollup(\''+rk+'\')" title="collapse">▾</span>';
+        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId); });
+      }
+    }else if(seg.type==='past'){
+      const rk='rollup-'+seg.run[0].id, expanded=!!manualRollup[rk];
+      if(!expanded){
+        body+='<div class="pastrollupabs" style="top:'+top+'px;height:'+height+'px" onclick="toggleRollup(\''+rk+'\')">⋯ '+
+          seg.run[0].start+'–'+seg.run[seg.run.length-1].end+' · '+seg.run.length+' block'+(seg.run.length===1?'':'s')+' earlier today</div>';
+      }else{
+        axis+='<span class="gaxis-toggle" style="top:'+top+'px" onclick="toggleRollup(\''+rk+'\')" title="collapse">▾</span>';
+        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId); });
+      }
+    }else{
+      body+=blockGridBoxHTML(seg.run[0],openId);
+    }
+  });
   /* the now line: a real absolute line across the fixed grid, at the actual live-time offset —
-     the grid has a real fixed pixel height, so this position is reliable instead of resolving
-     against an auto-height container. */
-  if(viewingToday){
+     unlike the elastic layout, the grid has a real fixed pixel height now, so this position is
+     reliable instead of resolving against an auto-height container. */
+  if(isViewingToday()){
     const nm=nowMinutes()%1440;
-    if(nm>=liveOrigin&&nm<=DAY_END) body+='<div class="gridnowline" style="top:'+minToPx(nm,liveOrigin)+'px" data-lbl="'+hhmm(new Date())+'"></div>';
+    if(nm>=DAY_START&&nm<=DAY_END) body+='<div class="gridnowline" style="top:'+minToPx(nm)+'px" data-lbl="'+hhmm(new Date())+'"></div>';
   }
-  if(pendingBlockStart!==null&&pendingBlockStart>=liveOrigin&&pendingBlockStart<=DAY_END){
-    body+='<div class="pendingline" style="top:'+minToPx(pendingBlockStart,liveOrigin)+'px" data-lbl="'+fromMin(pendingBlockStart)+' — double-click the end"></div>';
-  }
-  h+='<div class="gridwrap"><div class="gridaxis" style="height:'+totalPx+'px">'+axis+'</div>'+
-    '<div class="gridbody" style="height:'+totalPx+'px" '+gridCanvasHandlers(liveOrigin)+'>'+body+'</div></div>';
-  document.getElementById('timeline').innerHTML=h;
+  document.getElementById('timeline').innerHTML=
+    '<div class="gridwrap"><div class="gridaxis" style="height:'+gridTotalPx()+'px">'+axis+'</div>'+
+    '<div class="gridbody" style="height:'+gridTotalPx()+'px">'+body+'</div></div>';
   renderBlockDetailPanel();
 }
-/* ---------- drag-to-resize: mouse on desktop, touch too, alongside the time-input fields ----------
+/* ---------- drag-to-resize: mouse only, alongside the time-input fields ----------
    Added on top of (not instead of) the editable start/end inputs in the detail panel — inputs
-   stay the reliable path on a phone, this is the fast path with a mouse. Snapped to 5-minute
-   increments so a shaky drag doesn't leave a block ending at 2:47. */
+   are the only path on a phone (see the reshandle comment above for why touch was dropped),
+   this is the fast path with a mouse. Snapped to 5-minute increments so a shaky drag doesn't
+   leave a block ending at 2:47. */
 let resizeState=null;
-function resizeEventY(ev){ return (ev.touches&&ev.touches[0])?ev.touches[0].clientY:ev.clientY; }
+function resizeEventY(ev){ return ev.clientY; }
 function startBlockResize(ev,id,edge){
   ev.preventDefault(); ev.stopPropagation();
   const b=blockOf(id); if(!b) return;
   resizeState={id:id, edge:edge, startY:resizeEventY(ev), origStart:toMin(b.start), origEnd:toMin(b.end||fromMin(toMin(b.start)+60))};
   document.addEventListener('mousemove',onBlockResizeMove);
   document.addEventListener('mouseup',onBlockResizeEnd);
-  document.addEventListener('touchmove',onBlockResizeMove,{passive:false});
-  document.addEventListener('touchend',onBlockResizeEnd);
 }
 function onBlockResizeMove(ev){
   if(!resizeState) return;
@@ -3618,8 +3806,6 @@ function onBlockResizeEnd(){
   resizeState=null;
   document.removeEventListener('mousemove',onBlockResizeMove);
   document.removeEventListener('mouseup',onBlockResizeEnd);
-  document.removeEventListener('touchmove',onBlockResizeMove);
-  document.removeEventListener('touchend',onBlockResizeEnd);
 }
 function renderPlan(){
   const dates=weekDates();
@@ -3671,7 +3857,7 @@ function renderDock(){
       qh+='<div class="unitrow qunit'+(dn?' done':'')+(skipped?' skipped':'')+(due?'':' notdue')+'" draggable="'+(dn?'false':'true')+'" ondragstart="onQuestDragStart(event,\''+q.id+'\')" '+
         'ondragover="event.preventDefault();event.stopPropagation();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onTaskRowDrop(event,\''+q.id+'\')">'+
         '<div class="unitmain" onclick="toggleUnit(\''+q.id+'\')">'+
-        '<div class="ring" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:#fff':'')+'">\u2713</div>'+
+        '<div class="ring" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:var(--bgpage)':'')+'">\u2713</div>'+
         '<span class="nm">'+String(q.text).replace(/</g,'&lt;')+'</span>'+
         (assigned?'<span class="tag">'+assigned+'</span>':'')+
         (due?'':'<span class="tag">not today</span>')+
@@ -3725,8 +3911,8 @@ function renderTaskChip(t){
   return '<div class="tbchip'+(dn?' done':'')+'" draggable="true" ondragstart="onTaskDragStart(event,\''+t.id+'\')" '+
     'ondragover="event.preventDefault();event.stopPropagation();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onTaskRowDrop(event,\''+t.id+'\')">'+
     '<div class="tbchip-title">'+
-    '<div class="ring" onclick="toggleUnit(\''+t.id+'\')" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:#fff':'')+'">\u2713</div>'+
-    (prioColor?'<span class="prio" style="background:'+prioColor+'" title="'+t.priority+' priority">'+t.priority+'</span>':'')+
+    '<div class="ring" onclick="toggleUnit(\''+t.id+'\')" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:var(--bgpage)':'')+'">\u2713</div>'+
+    (prioColor?'<span class="prio" style="background:'+prioColor+'" title="'+t.priority+' priority"></span>':'')+
     '<span class="nm" contenteditable="true" onclick="event.stopPropagation()" onblur="setTaskText(\''+t.id+'\',this.textContent)">'+String(t.text).replace(/</g,'&lt;')+'</span>'+
     '</div>'+
     unitProgressHTML(t)+
@@ -3741,9 +3927,8 @@ function renderTaskBank(){
   const catChipsEl=document.getElementById('catChips');
   if(catChipsEl){
     catChipsEl.innerHTML=S.categories.map(function(c){
-      const dArm=armed==='cat:'+c, col=categoryColor(c);
-      return '<span class="catchip" style="border-color:'+col.edge+'"><span class="tagdot" style="background:'+col.edge+'"></span>'+c+
-        '<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.5" onclick="delCategory(\''+c+'\',event)">'+(dArm?'sure?':'✕')+'</button></span>';
+      const dArm=armed==='cat:'+c;
+      return '<span class="catchip">'+c+'<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.5" onclick="delCategory(\''+c+'\',event)">'+(dArm?'sure?':'✕')+'</button></span>';
     }).join('');
   }
   let totalUnassigned=0;
@@ -3760,8 +3945,7 @@ function renderTaskBank(){
     let h='<div class="tbenv-head" onclick="toggleEnvelope(\''+env+'\')"><span class="lbl">'+env+'</span><span class="stripcount">'+items.length+'</span></div>';
     h+='<div class="tbenv-body">';
     Object.keys(tags).sort().forEach(function(tg){
-      const tgCol=categoryColor(tg);
-      h+='<div class="tbtag"><div class="tbtaghead"><span class="tagdot" style="background:'+tgCol.edge+'"></span>'+tg+'</div>';
+      h+='<div class="tbtag"><div class="tbtaghead">'+tg+'</div>';
       tags[tg].sort(byOrder).forEach(function(t){ h+=renderTaskChip(t); });
       h+='</div>';
     });
@@ -3861,32 +4045,32 @@ function render(){
       '<div class="offtodaybar" onclick="goToday()">viewing '+vdayLabel().toLowerCase()+
       ' \u00b7 ticking things off here won\u2019t earn or affect streaks \u00b7 <b>back to today</b></div>';
   }
-  let req=[], doneC=0;
-  (S.ritualDefs||[]).forEach(function(rd){ itemsFor(rd.id).forEach(function(i){ if(i.type==='core'||i.type==='med'){ req.push(i); if(isDone(i.id)) doneC++; } }); });
-  const overall=Math.round(((doneC/Math.max(1,req.length))*0.7+Math.min(1,d.water/WATER_GOAL)*0.3)*100);
+  const overall=Math.round(dayScore(vday())*100);
   document.getElementById('dayPct').textContent=overall+'%';
   document.getElementById('dayFill').style.width=overall+'%';
-  document.getElementById('pointsPill').textContent=ptsStr(S.cents);
+  renderPrismShell();
+  renderPrismFocus();
   renderFocusSession();
   /* water lives in the app header now (waterHeader/waterFillHeader/cupCaptionHeader), so it has
      to render on every view, not just today — this block runs before the view branches below,
      and the detail card (still full waterCard, now parked in the more tab) is refreshed further
      down alongside the rest of the more-tab cards so its elements only get touched when present. */
   const hv=vessel();
-  const hNumCups=Math.max(1,Math.round(WATER_GOAL/hv.oz));
-  const hWaterPct=Math.min(100,Math.round(d.water/WATER_GOAL*100));
+  const hNumCups=Math.max(1,Math.round(goalOn(vday())/hv.oz));
+  const hWaterPct=Math.min(100,Math.round(d.water/goalOn(vday())*100));
   const waterFillHeaderEl=document.getElementById('waterFillHeader');
   if(waterFillHeaderEl) waterFillHeaderEl.style.width=hWaterPct+'%';
   const waterHeaderEl=document.getElementById('waterHeader');
-  if(waterHeaderEl) waterHeaderEl.classList.toggle('full',d.water>=WATER_GOAL);
+  if(waterHeaderEl) waterHeaderEl.classList.toggle('full',d.water>=goalOn(vday()));
   const cupCaptionHeaderEl=document.getElementById('cupCaptionHeader');
-  if(cupCaptionHeaderEl) cupCaptionHeaderEl.textContent=d.water+'/'+WATER_GOAL+'oz';
+  if(cupCaptionHeaderEl) cupCaptionHeaderEl.textContent=d.water+'/'+goalOn(vday())+'oz';
+  renderRitualQuickRow();
   if(viewMode==='notes'){ renderNotes(); return; }
   if(viewMode==='month'){ renderMonth(); return; }
   if(viewMode==='planning'){ renderTaskBank(); renderFutureLog(); renderPlan(); return; }
   /* everything below here used to be gated to the today view only, back when every one of these
      cards lived there. Now most of them (water detail, habit streaks, meditation, books,
-     movement, treats, spend, papers, today's-tasks) live in the more tab instead — but their
+     movement, spend, papers, today's-tasks) live in the more tab instead — but their
      DOM nodes are always present (display:none on the container, not removed), so it's simplest
      to just keep refreshing them every render() regardless of which tab is on screen, and only
      gate the two genuinely today-only pieces (the timeline itself and the quest dock). */
@@ -3894,32 +4078,29 @@ function render(){
   renderTodayTasksCard(); renderPapers();
   document.getElementById('cnt-day').textContent=d.blocks.filter(isBlockCleared).length+'/'+d.blocks.length+' blocks cleared';
   const v=vessel();
-  const numCups=Math.max(1,Math.round(WATER_GOAL/v.oz));
+  const numCups=Math.max(1,Math.round(goalOn(vday())/v.oz));
   const halfSteps=Math.min(numCups,Math.round(d.water/v.oz*2)/2);
-  const waterPct=Math.min(100,Math.round(d.water/WATER_GOAL*100));
+  const waterPct=Math.min(100,Math.round(d.water/goalOn(vday())*100));
   const waterBarEl=document.getElementById('waterBar');
-  if(waterBarEl) waterBarEl.classList.toggle('full',d.water>=WATER_GOAL);
+  if(waterBarEl) waterBarEl.classList.toggle('full',d.water>=goalOn(vday()));
   const waterFillEl=document.getElementById('waterFill');
   if(waterFillEl) waterFillEl.style.width=waterPct+'%';
   const waterDivEl=document.getElementById('waterDividers');
   if(waterDivEl){
     /* dividers mark real cup-sized boundaries (i cups * this vessel's oz), not an even 1/numCups
        split — numCups is rounded, so an even split drifts away from where the fill bar actually
-       is whenever WATER_GOAL isn't a clean multiple of the vessel size */
+       is whenever the goal isn't a clean multiple of the vessel size */
     let dh='';
     for(let i=1;i<numCups;i++){
-      const pos=Math.min(100,Math.round(i*v.oz/WATER_GOAL*100));
+      const pos=Math.min(100,Math.round(i*v.oz/goalOn(vday())*100));
       if(pos>=100) continue;
       const past=pos<=waterPct;
       dh+='<div class="wdiv'+(past?' past':'')+'" style="left:'+pos+'%"></div>';
     }
     waterDivEl.innerHTML=dh;
   }
-  const cupCaptionEl=document.getElementById('cupCaption');
-  cupCaptionEl.textContent='';
-  const wozn=document.createElement('span'); wozn.className='wozn'; wozn.textContent=d.water+' / '+WATER_GOAL+' oz';
-  cupCaptionEl.append(wozn,' · '+fmtCups(halfSteps)+' of '+numCups+' '+v.name.toLowerCase()+' cups');
-  document.getElementById('waterHint').textContent=d.water>=WATER_GOAL?'goal met':(WATER_GOAL-d.water)+' oz to go';
+  document.getElementById('cupCaption').textContent=d.water+' / '+goalOn(vday())+' oz · '+fmtCups(halfSteps)+' of '+numCups+' '+v.name.toLowerCase()+' cups';
+  document.getElementById('waterHint').textContent=d.water>=goalOn(vday())?'goal met':(goalOn(vday())-d.water)+' oz to go';
   document.getElementById('vesselSel').innerHTML=S.vessels.map(function(x,i){
     return '<option value="'+i+'"'+(i===S.vesselIdx?' selected':'')+'>'+x.name+' · '+x.oz+'oz</option>';}).join('');
   document.getElementById('wStreakN').textContent=S.waterStreak;
@@ -3958,13 +4139,11 @@ function render(){
        quest dock, which is only ever for genuinely repeating non-habit quests */
     const unassignedHabits=ritualRoster(null).filter(function(i){return i.type==='core'||i.type==='med'||i.type==='custom';});
     if(unassignedHabits.length) hsColsHtml+=hsCol(null,'unassigned');
-    /* just morning + evening, always — no ritual-block creation UI. Adding a new HABIT (an item
-       within one of those two) is the one thing this card still needs a quick path for. */
-    let habitAddHtml='<div class="habitaddquick">'+
-      '<input id="newHabitName" placeholder="new habit…" maxlength="60" onkeydown="if(event.key===\'Enter\'){event.preventDefault();submitAddHabit()}">'+
-      '<select id="newHabitRitual">'+(S.ritualDefs||[]).map(function(rd){return '<option value="'+rd.id+'">'+rd.name+'</option>';}).join('')+'</select>'+
-      '<button class="btn tiny soft" onclick="submitAddHabit()">+ habit</button></div>';
-    hsEl.innerHTML='<div class="hscols">'+hsColsHtml+'</div>'+habitAddHtml;
+    hsColsHtml+='<div class="hscol hscoladd">'+
+      '<input id="newRitualName" placeholder="new ritual block…" maxlength="40">'+
+      '<div class="ritualaddtimes"><input id="newRitualStart" type="time" value="12:00"><input id="newRitualEnd" type="time" value="13:00"></div>'+
+      '<button class="btn tiny soft" onclick="submitAddRitualDef()">+ add ritual</button></div>';
+    hsEl.innerHTML='<div class="hscols">'+hsColsHtml+'</div>';
   }
   let gh='';
   S.books.forEach(function(b){
@@ -3984,7 +4163,7 @@ function render(){
   document.getElementById('bookList').innerHTML=gh;
   let wk=0; for(let n=0;n<7;n++){ const dd=S.days[shiftKey(vday(),-n)]; if(dd)wk+=dd.pagesLogged||0; }
   document.getElementById('pagesWk').textContent=wk+' pages this week';
-  paintRing('readGoalRing',S.readGoal?wk/S.readGoal:0,40);
+  document.getElementById('readGoalFill').style.width=Math.min(100,Math.round(wk/S.readGoal*100))+'%';
   document.getElementById('readGoalN').textContent=wk+'/'+S.readGoal;
   document.getElementById('readGoalBtn').textContent=S.readGoal+' pages';
   document.getElementById('readGoalEditBox').innerHTML= editing==='readGoal'?
@@ -4083,36 +4262,30 @@ function render(){
   document.getElementById('moveEditBox').innerHTML= editing==='moveGoal'?
     '<div class="inline-edit"><span class="lbl">weekly minutes</span><input id="moveGoalIn" type="number" min="10" value="'+S.moveGoal+'">'+
     '<button class="btn tiny" onclick="submitMoveGoal()">save</button><button class="btn tiny ghost" onclick="toggleEdit(null)">cancel</button></div>':'';
-  const bankVEl=document.getElementById('bankV');
-  bankVEl.textContent=fmtSigned(S.cents);
-  bankVEl.style.color=S.cents<0?'var(--pink-deep)':'';
-  document.getElementById('bankLbl').textContent=S.cents<0?'in deficit':'saved up';
-  const wkCents=weeklyCents();
-  document.getElementById('weekV').textContent=fmtSigned(wkCents)+' of $'+(WEEKLY_TARGET_CENTS/100).toFixed(0)+' goal · $'+(WEEKLY_CAP_CENTS/100).toFixed(0)+' cap';
-  document.getElementById('weekBarFill').style.width=Math.min(100,Math.max(0,Math.round(wkCents/WEEKLY_CAP_CENTS*100)))+'%';
-  document.getElementById('weekBarTarget').style.left=Math.round(WEEKLY_TARGET_CENTS/WEEKLY_CAP_CENTS*100)+'%';
-  document.getElementById('treatList').innerHTML=S.treats.map(function(t){
-    const cost=Math.round(t.points);
-    const pct=Math.min(100,Math.round(S.cents/cost*100));
-    const rArm=armed==='redeem:'+t.id, dArm=armed==='tr:'+t.id;
-    return '<div class="treat"><span class="nm">'+t.name+'</span>'+
-      '<div class="bar sun"><div class="fill" style="width:'+pct+'%"></div></div>'+
-      '<span class="cost">'+t.points+' pts</span>'+
-      '<button class="btn tiny soft'+(rArm?' danger':'')+'" onclick="redeem(\''+t.id+'\')"'+(S.cents<cost?' disabled':'')+'>'+(rArm?'confirm':'redeem')+'</button>'+
-      '<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.4" onclick="delTreat(\''+t.id+'\',event)">'+(dArm?'sure?':'✕')+'</button></div>';}).join('');
-  document.getElementById('redeemedLine').textContent=S.redeemed.length?
-    'redeemed: '+S.redeemed.slice(-3).map(function(r){return r.name;}).join(' · '):'';
+  /* budget summary — remaining against the monthly allowance, or just the period total when no
+     budget has been set yet */
+  const budEl=document.getElementById('budgetV');
+  if(budEl){
+    const monthly=budgetMonthlyCents(), spent=spentInPeriod(), left=monthly-spent;
+    budEl.textContent=monthly?dollarsStr(Math.max(0,left)):dollarsStr(spent);
+    budEl.style.color=(monthly&&left<0)?'var(--pink-deep)':'';
+    const budLbl=document.getElementById('budgetLbl');
+    if(budLbl) budLbl.textContent=monthly
+      ? (left<0?'over by '+dollarsStr(-left):'left of '+dollarsStr(monthly))
+      : 'spent this period';
+    const budFill=document.getElementById('budgetBarFill');
+    if(budFill) budFill.style.width=(monthly?Math.min(100,Math.max(0,Math.round(spent/monthly*100))):0)+'%';
+  }
   const spendListEl=document.getElementById('spendList');
   if(spendListEl){
-    spendListEl.innerHTML=S.spendLog.length?S.spendLog.slice(0,25).map(function(s){
+    const txns=S.txns||[];
+    spendListEl.innerHTML=txns.length?txns.slice(0,25).map(function(s){
       const dArm=armed==='sp:'+s.id;
       const dp=(s.day||today()).split('-').map(Number);
       const when=new Date(dp[0],dp[1]-1,dp[2]).toLocaleDateString(undefined,{month:'short',day:'numeric'});
-      const balClass=s.balanceAfter<0?'neg':'pos';
-      const balTxt=s.balanceAfter<0?fmtSigned(s.balanceAfter)+' deficit':fmtSigned(s.balanceAfter)+' left';
       return '<div class="spend"><span class="nm">'+String(s.name).replace(/</g,'&lt;')+'</span>'+
-        '<span class="amt">'+dollarsStr(s.amount)+'</span>'+
-        '<span class="bal '+balClass+'">'+balTxt+'</span>'+
+        '<span class="amt">'+dollarsStr(s.amountCents)+'</span>'+
+        '<span class="bal">'+String(s.cat||'').replace(/</g,'&lt;')+'</span>'+
         '<span class="when">'+when+'</span>'+
         '<button class="rowbtn'+(dArm?' arm':'')+'" style="opacity:.4" onclick="delSpend(\''+s.id+'\',event)">'+(dArm?'sure?':'✕')+'</button></div>';
     }).join(''):'<div class="redeemed-line">nothing logged yet</div>';
@@ -4219,24 +4392,12 @@ function dayStats(k){
   const doneN=req.filter(function(i){return dd.done&&dd.done[i.id];}).length;
   const exMin=dd.ex?Object.keys(dd.ex).reduce(function(a,k){return a+dd.ex[k];},0):0;
   const quests=dd.qdone?Object.keys(dd.qdone).length:0;
-  return {habitPct:req.length?doneN/req.length:0, pages:dd.pagesLogged||0, exMin:exMin, waterHit:dd.water>=WATER_GOAL, quests:quests, hasData:true};
-}
-let monthCursor=null;
-function curMonthCursor(){ if(!monthCursor){ const n=new Date(); monthCursor={y:n.getFullYear(),m:n.getMonth()}; } return monthCursor; }
-function shiftMonth(delta){
-  const c=curMonthCursor(); let y=c.y, m=c.m+delta;
-  if(m<0){ m=11; y--; } else if(m>11){ m=0; y++; }
-  const now=new Date();
-  if(y>now.getFullYear()||(y===now.getFullYear()&&m>now.getMonth())){ y=now.getFullYear(); m=now.getMonth(); }
-  monthCursor={y:y,m:m}; renderMonth();
+  return {habitPct:req.length?doneN/req.length:0, pages:dd.pagesLogged||0, exMin:exMin,
+    waterHit:dd.water>=goalOn(k), quests:quests, hasData:true, score:dayScore(k)};
 }
 function renderMonth(){
-  const cur=curMonthCursor(); const y=cur.y, m=cur.m;
-  const now=new Date();
-  document.getElementById('monthLbl').textContent=new Date(y,m,1).toLocaleDateString(undefined,{month:'long',year:'numeric'});
-  const atCurrentMonth=(y===now.getFullYear()&&m===now.getMonth());
-  const nextBtn=document.getElementById('monthNextBtn');
-  if(nextBtn) nextBtn.disabled=atCurrentMonth;
+  const now=new Date(); const y=now.getFullYear(), m=now.getMonth();
+  document.getElementById('monthLbl').textContent=now.toLocaleDateString(undefined,{month:'long',year:'numeric'});
   const nDays=daysInMonth(y,m);
   let fullDays=0, pageSum=0, pageDays=0, exSum=0, waterHitDays=0, questSum=0, elapsedDays=0;
   const cats={}; QCATS.forEach(function(c){cats[c]=0;});
@@ -4257,18 +4418,24 @@ function renderMonth(){
     '<div class="metric"><div class="mv">'+(pageDays?Math.round(pageSum/pageDays):0)+'</div><div class="ml">avg pages, active days</div></div>'+
     '<div class="metric"><div class="mv">'+Math.round(exSum/60*10)/10+'h</div><div class="ml">exercise this month</div></div>'+
     '<div class="metric"><div class="mv">'+waterHitDays+' / '+elapsedDays+'</div><div class="ml">water goal hit</div></div>';
+  /* one ring per date, driven by dayScore — the same number the header bar and the phone's
+     day-of-week strip show, so a date reads identically wherever you meet it. Future dates draw
+     an empty track rather than a partial score. */
   const firstDow=new Date(y,m,1).getDay();
   let hh=''; for(let i=0;i<firstDow;i++) hh+='<div></div>';
+  const tk=today();
   for(let dnum=1;dnum<=nDays;dnum++){
     const dt=new Date(y,m,dnum);
     const k=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-    if(dt>now){ hh+='<div class="hcell" style="background:transparent;border-style:dashed"></div>'; continue; }
-    const st=dayStats(k);
-    const alpha=st.hasData?Math.max(0.08,st.habitPct):0.05;
-    hh+='<div class="hcell" style="background:rgba(122,156,125,'+alpha.toFixed(2)+')" title="'+k+' · '+Math.round(st.habitPct*100)+'%">'+
-      (st.hasData?'<span class="hcelldot"></span>':'')+'</div>';
+    const future=k>tk, isToday=k===tk;
+    const sc=future?0:dayScore(k);
+    const col=future?'var(--glass-strong)':scoreColor(sc);
+    hh+='<div class="scell'+(isToday?' today':'')+(future?' future':'')+'" onclick="openDay(\''+k+'\')" '+
+      'title="'+k+' · '+Math.round(sc*100)+'%">'+ringSvg(sc,col,44,10)+
+      '<span class="n">'+dnum+'</span></div>';
   }
-  document.getElementById('heatmap').innerHTML=hh;
+  const sg=document.getElementById('scoreGrid');
+  if(sg) sg.innerHTML=hh;
   let maxWk=1; const weeks=[];
   for(let w=5;w>=0;w--){
     let sum=0;
@@ -4390,7 +4557,6 @@ function onTouchDragEnd(){
   await load();
   reconcile(); render(); mediPaint(); maybeAutoBackup();
   applyLayoutDom(); applyCollapsedDom(); applyTheme();
-  playCardEntrance();
   lastSnapshot=JSON.stringify(S);
   setInterval(tickTimers,1000);
   setInterval(function(){ if(today()!==S.lastDate){ reconcile(); render(); } },60000);
@@ -4403,8 +4569,6 @@ function onTouchDragEnd(){
   });
   document.addEventListener('keydown',function(e){
     if(e.key==='Escape'&&focusBlockId){ exitFocus(); return; }
-    if(e.key==='Escape'&&pendingBlockStart!==null){ cancelPendingBlock(); return; }
-    if(e.key==='Escape'&&openBlockId()){ closeBlockPanel(); return; }
     const mod=e.ctrlKey||e.metaKey;
     if(!mod) return;
     const t=e.target;
@@ -4422,11 +4586,11 @@ function onTouchDragEnd(){
   window.addEventListener('pagehide',function(){ flushSave(); flushGhPushUrgent(); });
   document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden'){ flushSave(); flushGhPushUrgent(); } });
   /* rotating a phone crosses the gridPxPerMin() breakpoint in either direction, so the timeline
-     needs a re-render to pick up the new ratio — just the timeline, not the whole render(),
-     which would also re-touch unrelated things like the greeting and water bars on every tick. */
+     needs a re-render to pick up the new ratio — it doesn't otherwise get one until the next
+     unrelated interaction. */
   let resizeRenderTimer=null;
   window.addEventListener('resize',function(){
     clearTimeout(resizeRenderTimer);
-    resizeRenderTimer=setTimeout(function(){ if(viewMode==='today') renderTimeline(); },150);
+    resizeRenderTimer=setTimeout(function(){ if(viewMode==='today') render(); },150);
   });
 })();
