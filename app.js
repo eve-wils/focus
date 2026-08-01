@@ -16,44 +16,31 @@ function gridPxPerMin(){ return (typeof window!=='undefined'&&window.innerWidth<
 function gridTotalPx(){ return Math.round((DAY_END-DAY_START)*gridPxPerMin()); }
 function minToPx(min){ return Math.round((min-DAY_START)*gridPxPerMin()); }
 const DEFAULT_CATEGORIES=['home','research','admin','self-care','hobbies','school'];
-/* appearance: background/card/text + the app's two accent families (strawberry, matcha), plus
-   a small curated set of font stacks — free-text font input isn't offered since a bad value
-   would just silently fall back to the browser default with no feedback */
-const DEFAULT_THEME={mode:'light', bgpage:'#fbe6f4', glass:'#FFFFFF', glassStrong:'#F6F5F1',
-  ink:'#1C1B19', ink2:'#6A6862', ink3:'#A6A39B', stroke:'rgba(28,27,25,.14)', rule:'rgba(28,27,25,.08)',
-  pink:'#F7D6DD', pinkDeep:'#E7A6B7', mint:'#DCE9CB', mintDeep:'#93AD64', fontKey:'inter'};
-/* dark mode is its own curated preset (not a computed inverse of the light one) so contrast and
-   accent saturation can be tuned by hand rather than relying on a naive color-flip */
-const DEFAULT_DARK_THEME={mode:'dark', bgpage:'#17181B', glass:'#212327', glassStrong:'#2A2C31',
-  ink:'#EDEDEC', ink2:'#A8A9AD', ink3:'#6E7075', stroke:'rgba(255,255,255,.14)', rule:'rgba(255,255,255,.08)',
-  pink:'#4F3640', pinkDeep:'#8A5468', mint:'#333F29', mintDeep:'#7C9A52', fontKey:'inter'};
+/* ===== appearance =====
+   Prism Terminal is the app's look: one fixed dark phosphor palette, not a theme among several.
+   The five presets, the light/dark toggle and the saved-theme snapshots were retired with the
+   redesign — but the palette is still *data*, not literals. S.theme holds every colour, the CSS
+   in styles.css references only custom properties, and applyTheme() pushes the one onto the
+   other. Re-adding a colour picker later means building UI over the object below; it does not
+   mean going back through the stylesheet. */
+const DEFAULT_THEME={mode:'dark',
+  bgpage:'#060a07', glass:'#0b120d', glassStrong:'#12200f',
+  ink:'#c9ffd9', ink2:'#a9cfb5', ink3:'#4a7a55',
+  stroke:'#1d3323', rule:'#12200f',
+  /* accent 1 — amber: deadlines, priority, budget */
+  pink:'rgba(232,163,61,.15)', pinkDeep:'#e8a33d',
+  /* accent 2 — phosphor green: primary, active, ok */
+  mint:'rgba(125,250,160,.14)', mintDeep:'#7dfaa0',
+  /* teal, used for water and secondary bars */
+  aqua:'rgba(79,214,168,.14)', aquaDeep:'#4fd6a8',
+  alert:'#e05c4a',
+  radius:'0px', fontKey:'mono'};
 const FONT_STACKS={
-  inter:"'Inter','Helvetica Neue',Helvetica,'Hiragino Kaku Gothic ProN','Yu Gothic',Arial,sans-serif",
-  serif:"Georgia,'Times New Roman',serif",
-  rounded:"'Trebuchet MS',Verdana,sans-serif",
-  system:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
-  mono:"'Courier New',ui-monospace,monospace"
+  mono:"'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace",
+  system:"system-ui,-apple-system,'Segoe UI',Roboto,sans-serif"
 };
-/* five one-tap presets, same shape as DEFAULT_THEME/DEFAULT_DARK_THEME — picking one just replaces
-   S.theme wholesale (see applyPresetTheme), same as switching light/dark mode does. Anyone can still
-   hand-tune from there and save their own on top via saveCurrentTheme. */
-const PRESET_THEMES=[
-  {id:'pilates', name:'pink pilates princess', mode:'light', bgpage:'#FFE9F2', glass:'#FFFFFF', glassStrong:'#FFF4F8',
-    ink:'#3A222C', ink2:'#95677A', ink3:'#D3A9BC', stroke:'rgba(58,34,44,.14)', rule:'rgba(58,34,44,.08)',
-    pink:'#FFB6D5', pinkDeep:'#F25CA0', mint:'#F5E1A4', mintDeep:'#D9A927', fontKey:'rounded'},
-  {id:'cottagecore', name:'cottagecore', mode:'light', bgpage:'#F4EEDC', glass:'#FFFDF6', glassStrong:'#FBF4E4',
-    ink:'#3B3226', ink2:'#7C6F58', ink3:'#B3A488', stroke:'rgba(59,50,38,.16)', rule:'rgba(59,50,38,.09)',
-    pink:'#E7B199', pinkDeep:'#B96B4A', mint:'#C3CFA6', mintDeep:'#748A57', fontKey:'serif'},
-  {id:'ocean', name:'ocean breeze', mode:'light', bgpage:'#E6F3F5', glass:'#FFFFFF', glassStrong:'#F1FAFB',
-    ink:'#163238', ink2:'#54767F', ink3:'#9BB9BF', stroke:'rgba(22,50,56,.14)', rule:'rgba(22,50,56,.08)',
-    pink:'#FFB79B', pinkDeep:'#E8734F', mint:'#8FD1CC', mintDeep:'#39948F', fontKey:'system'},
-  {id:'academia', name:'dark academia', mode:'dark', bgpage:'#1C1512', glass:'#2A211C', glassStrong:'#332822',
-    ink:'#EDE3D3', ink2:'#B8A78F', ink3:'#7C6E5C', stroke:'rgba(255,255,255,.14)', rule:'rgba(255,255,255,.08)',
-    pink:'#8C4A52', pinkDeep:'#D98A97', mint:'#4B4630', mintDeep:'#C9A227', fontKey:'serif'},
-  {id:'sunset', name:'sunset retro', mode:'light', bgpage:'#FFE7D3', glass:'#FFFFFF', glassStrong:'#FFF2E6',
-    ink:'#3A1F2B', ink2:'#8A5C6A', ink3:'#D3ABB6', stroke:'rgba(58,31,43,.14)', rule:'rgba(58,31,43,.08)',
-    pink:'#FF8FA8', pinkDeep:'#E8437A', mint:'#B49AE0', mintDeep:'#7451C4', fontKey:'rounded'}
-];
+/* block categories — the one colour set that is keyed by meaning rather than by accent slot */
+const CAT_COLORS={home:'#9b7fd4', work:'#7dfaa0', meeting:'#e8a33d', reading:'#4fd6a8', social:'#d4736f'};
 /* default card order per column, across BOTH the today view (cols 0-2: todayColA/B/C) and the
    more view (cols 3-5: moreColA/B/C) — ids match each card's actual DOM id. Water lives in the
    header now (see waterHeader). Today keeps habit streaks, the calendar, the inbox (tasks
@@ -117,13 +104,16 @@ const ACTS=[
 ];
 const BOOK_COLORS=['#A48DE8','#F09CC0','#7FB8DC','#F5CE58','#8ED0A0','#E88DA4'];
 /* matcha ↔ strawberry: alternating soft green and pink block fills with a deeper edge/accent */
+/* Block fills are a translucent wash of the edge colour rather than an opaque pastel: on the
+   terminal's black page an opaque light fill would need dark text, which fights every other label
+   on screen. A wash keeps the page's own text colour readable straight through it. */
 const BLOCK_PALETTE=[
-  {bg:'#EAF1DD', edge:'#93AD64'},  /* matcha */
-  {bg:'#FBE4E9', edge:'#E7A6B7'},  /* strawberry cream */
-  {bg:'#E1EBCF', edge:'#85A957'},  /* deeper matcha */
-  {bg:'#F6D9E1', edge:'#DCAAC0'},  /* deeper strawberry cream */
-  {bg:'#F0F4E4', edge:'#A9C480'},  /* pale matcha */
-  {bg:'#FCE9EE', edge:'#EFB6AC'}   /* pale strawberry cream */
+  {bg:'rgba(125,250,160,.13)', edge:'#7dfaa0'},  /* work — green */
+  {bg:'rgba(155,127,212,.15)', edge:'#9b7fd4'},  /* home — violet */
+  {bg:'rgba(232,163,61,.14)',  edge:'#e8a33d'},  /* meeting — amber */
+  {bg:'rgba(79,214,168,.13)',  edge:'#4fd6a8'},  /* reading — teal */
+  {bg:'rgba(212,115,111,.14)', edge:'#d4736f'},  /* social — clay */
+  {bg:'rgba(125,250,160,.07)', edge:'#3b6b47'}   /* muted green */
 ];
 function blockHash(id){ let h=0; for(let i=0;i<String(id).length;i++){ h=(h*31+String(id).charCodeAt(i))>>>0; } return h; }
 function blockColor(b){ return BLOCK_PALETTE[blockHash(b.id)%BLOCK_PALETTE.length]; }
@@ -157,7 +147,7 @@ function blankState(){ return { v:5, lastDate:null, days:{},
   layout:{cols:DEFAULT_LAYOUT_COLS.map(function(c){return c.slice();}), collapsed:{}},
   theme:Object.assign({},DEFAULT_THEME),
   customActs:[], actTimers:{}, exMoves:[],
-  savedThemes:[], weekNotes:{},
+  weekNotes:{},
 }; }
 function migrateFromV3(old){
   const s=blankState();
@@ -319,10 +309,13 @@ function backfillLayout(){
      stuck on it with no UI path left to undo that, so it's force-cleared here every load. */
   if(S.layout.collapsed['card-day']) delete S.layout.collapsed['card-day'];
 }
+/* v:5 — the redesign replaced the palette outright, so a theme saved under the old system is
+   dropped rather than merged: half-migrating it would leave light-mode pinks on a black page.
+   `terminal:true` marks a theme object as already converted, so this runs exactly once. */
 function backfillTheme(){
-  if(!S.theme) S.theme=Object.assign({},DEFAULT_THEME);
+  if(!S.theme||!S.theme.terminal) S.theme=Object.assign({},DEFAULT_THEME,{terminal:true});
   Object.keys(DEFAULT_THEME).forEach(function(k){ if(S.theme[k]===undefined) S.theme[k]=DEFAULT_THEME[k]; });
-  if(!S.savedThemes) S.savedThemes=[];
+  delete S.savedThemes;
 }
 function backfillWeekNotes(){ if(!S.weekNotes) S.weekNotes={}; }
 function backfillMovement(){
@@ -336,11 +329,12 @@ function backfillMovement(){
   });
 }
 /* pushes S.theme onto the actual CSS custom properties. Both accents cascade to every alias that
-   was folded into that accent family during the matcha/strawberry palette consolidation, so
-   changing "accent 1" recolors everything derived from strawberry in one go, same for matcha. */
+   was folded into that accent family during the palette consolidation, so changing "accent 1"
+   recolors everything derived from it in one go, same for accent 2. This is the single seam
+   between the palette-as-data and the stylesheet. */
 function applyTheme(){
   const t=S.theme, r=document.documentElement.style;
-  r.setProperty('color-scheme',t.mode==='dark'?'dark':'light');
+  r.setProperty('color-scheme','dark');
   r.setProperty('--bgpage',t.bgpage);
   r.setProperty('--glass',t.glass);
   r.setProperty('--glass-strong',t.glassStrong);
@@ -349,93 +343,21 @@ function applyTheme(){
   r.setProperty('--ink-3',t.ink3);
   r.setProperty('--stroke',t.stroke);
   r.setProperty('--rule',t.rule);
-  r.setProperty('--serif',FONT_STACKS[t.fontKey]||FONT_STACKS.inter);
+  r.setProperty('--alert',t.alert);
+  r.setProperty('--r',t.radius);
+  r.setProperty('--serif',FONT_STACKS[t.fontKey]||FONT_STACKS.mono);
   ['--pink','--lav','--peach'].forEach(function(v){ r.setProperty(v,t.pink); });
   ['--pink-deep','--lav-deep','--peach-deep'].forEach(function(v){ r.setProperty(v,t.pinkDeep); });
-  ['--mint','--aqua','--sun','--sky','--leaf','--water'].forEach(function(v){ r.setProperty(v,t.mint); });
-  ['--mint-deep','--aqua-deep','--sun-deep','--sky-deep','--leaf-deep','--water-deep'].forEach(function(v){ r.setProperty(v,t.mintDeep); });
+  ['--mint','--sun','--leaf'].forEach(function(v){ r.setProperty(v,t.mint); });
+  ['--mint-deep','--sun-deep','--leaf-deep'].forEach(function(v){ r.setProperty(v,t.mintDeep); });
+  ['--aqua','--sky','--water'].forEach(function(v){ r.setProperty(v,t.aqua); });
+  ['--aqua-deep','--sky-deep','--water-deep'].forEach(function(v){ r.setProperty(v,t.aquaDeep); });
+  Object.keys(CAT_COLORS).forEach(function(k){ r.setProperty('--cat-'+k,CAT_COLORS[k]); });
 }
 function setThemeColor(key,val){ S.theme[key]=val; save(); applyTheme(); }
-function setThemeFont(key){ S.theme.fontKey=key; save(); applyTheme(); }
-/* switches the whole palette to the light or dark preset in one step, keeping whatever font the
-   person picked. Any hand-picked colors get replaced by the preset — mode is a starting point to
-   customize from, not a filter layered on top of custom colors. */
-function setThemeMode(mode){
-  const fontKey=S.theme.fontKey;
-  S.theme=Object.assign({},mode==='dark'?DEFAULT_DARK_THEME:DEFAULT_THEME,{fontKey:fontKey});
-  save(); applyTheme(); paintThemePanel();
-}
-function resetTheme(){
-  const mode=S.theme.mode;
-  S.theme=Object.assign({},mode==='dark'?DEFAULT_DARK_THEME:DEFAULT_THEME);
-  save(); applyTheme(); paintThemePanel();
-}
-/* named, saveable snapshots of the whole appearance config — colors, font, and mode — so you can
-   build out a look once and jump back to it later without re-picking every color by hand */
-function saveCurrentTheme(name){
-  const nv=(name||'').trim(); if(!nv) return;
-  const snapshot=Object.assign({},S.theme);
-  const existing=S.savedThemes.filter(function(t){return t.name.toLowerCase()===nv.toLowerCase();})[0];
-  if(existing){ existing.theme=snapshot; }
-  else S.savedThemes.push({id:'th'+Date.now(), name:nv, theme:snapshot});
-  save(); paintThemePanel();
-  toast((existing?'updated':'saved')+' theme "'+nv+'"');
-}
-function applySavedTheme(id){
-  const st=S.savedThemes.filter(function(t){return t.id===id;})[0]; if(!st) return;
-  S.theme=Object.assign({},st.theme);
-  save(); applyTheme(); paintThemePanel();
-}
-function applyPresetTheme(id){
-  const p=PRESET_THEMES.filter(function(t){return t.id===id;})[0]; if(!p) return;
-  S.theme=Object.assign({},p); delete S.theme.id; delete S.theme.name;
-  save(); applyTheme(); paintThemePanel();
-  toast('theme set to "'+p.name+'"');
-}
-function delSavedTheme(id,ev){ if(ev)ev.stopPropagation(); if(!arm('th:'+id)) return;
-  S.savedThemes=S.savedThemes.filter(function(t){return t.id!==id;});
-  armed=null; save(); paintThemePanel();
-}
-function paintThemePanel(){
-  const t=S.theme;
-  ['bgpage','glass','glassStrong','ink','ink2','ink3','pink','pinkDeep','mint','mintDeep'].forEach(function(k){
-    const el=document.getElementById('th-'+k); if(el) el.value=t[k];
-  });
-  const fontEl=document.getElementById('th-font'); if(fontEl) fontEl.value=t.fontKey;
-  const savedEl=document.getElementById('savedThemesRow');
-  if(savedEl){
-    savedEl.innerHTML=S.savedThemes.length?S.savedThemes.map(function(st){
-      const isArm=armed==='th:'+st.id;
-      return '<div style="display:flex;align-items:center;gap:8px">'+
-        '<button class="btn tiny ghost" style="flex:1;text-align:left" onclick="applySavedTheme(\''+st.id+'\')">'+String(st.name).replace(/</g,'&lt;')+'</button>'+
-        '<button class="btn tiny ghost" onclick="delSavedTheme(\''+st.id+'\',event)">'+(isArm?'sure?':'✕')+'</button>'+
-        '</div>';
-    }).join(''):'<span style="font-size:11px;color:var(--ink-3)">no saved themes yet</span>';
-  }
-  const lb=document.getElementById('th-mode-light'), db=document.getElementById('th-mode-dark');
-  if(lb) lb.classList.toggle('on',t.mode!=='dark');
-  if(db) db.classList.toggle('on',t.mode==='dark');
-  paintPresetThemes();
-}
-/* the 5 built-in looks, rendered as tap-to-preview swatches so picking a vibe never means fiddling
-   with eight separate color pickers first */
-function paintPresetThemes(){
-  const el=document.getElementById('presetThemesRow'); if(!el) return;
-  const cur=S.theme;
-  el.innerHTML=PRESET_THEMES.map(function(p){
-    const isOn=['mode','bgpage','ink','pink','pinkDeep','mint','mintDeep'].every(function(k){return cur[k]===p[k];});
-    return '<button class="presetswatch'+(isOn?' on':'')+'" onclick="applyPresetTheme(\''+p.id+'\')" title="'+String(p.name).replace(/</g,'&lt;')+'">'+
-      '<span class="pschip" style="background:'+p.bgpage+';border-color:'+p.stroke+'">'+
-        '<span style="background:'+p.pinkDeep+'"></span><span style="background:'+p.mintDeep+'"></span>'+
-      '</span>'+
-      '<span class="psname">'+String(p.name).replace(/</g,'&lt;')+'</span></button>';
-  }).join('');
-}
 function toggleSettingsPanel(){
   const p=document.getElementById('settingsPanel'); if(!p) return;
-  const show=p.style.display==='none';
-  p.style.display=show?'flex':'none';
-  if(show) paintThemePanel();
+  p.style.display=p.style.display==='none'?'flex':'none';
 }
 function cardCollapsed(id){ return !!(S.layout&&S.layout.collapsed&&S.layout.collapsed[id]); }
 function toggleCardCollapse(id,ev){
@@ -2936,16 +2858,20 @@ function setBudgetMonthly(v){ const n=Math.round((parseFloat(v)||0)*100);
    Same visual language as the no-spend row, but inverted: here presence (not absence) of the
    habit is the win. Only habits with a clean built-in daily pass/fail signal get a row —
    the ritual seal (every core/med item in that ritual done) and the water goal. */
-const HABIT_STREAKS=[
-  {id:'sunrise', name:'sunrise ritual'},
-  {id:'moonlight', name:'moonlight ritual'},
-  {id:'water', name:'water goal'}
-];
+/* The rows are DERIVED, never stored. This used to be a hardcoded list of three (sunrise,
+   moonlight, water) which quietly disagreed with S.ritualDefs — that list has been user-extendable
+   via addRitualDef() for a while, so adding a fourth ritual produced no fourth habit row.
+   Now every ritual contributes a row (it passes on a day when its seal is set, i.e. every core/med
+   item in it was done) plus one row for the water goal. Adding a habit is adding a ritual; there
+   is deliberately no parallel S.habits array to drift out of sync. */
+function habitRows(){
+  return (S.ritualDefs||[]).map(function(rd){ return {id:rd.id, name:rd.name}; })
+    .concat([{id:'water', name:'water goal'}]);
+}
 function habitDoneOnDay(habitId,dayKey){
   const dd=S.days[dayKey];
-  if(habitId==='sunrise') return !!(dd&&dd.done&&dd.done['seal_sunrise']);
-  if(habitId==='moonlight') return !!(dd&&dd.done&&dd.done['seal_moonlight']);
   if(habitId==='water') return !!(dd&&dd.water>=goalOn(dayKey))||S.frozenDays.indexOf(dayKey)>=0;
+  if(isRitualId(habitId)) return !!(dd&&dd.done&&dd.done['seal_'+habitId]);
   return false;
 }
 function habitStreak(habitId){
@@ -2959,6 +2885,58 @@ function habitStreak(habitId){
     streak++;
   }
   return streak;
+}
+/* ===================== day score =====================
+   One number for "how did this day go", used by the header bar, the month calendar rings and
+   (in the mobile shell) the day-of-week strip and week-grid column headers. Deliberately a
+   single definition: before this there were two different scores — a 0.7 habits / 0.3 water blend
+   in render() and a separate shape in dayStats() for the month view — which disagreed with each
+   other on the same day. Both now call this.
+
+   The mean of four equally-weighted components, each 0..1:
+     water   drunk / that day's goal, capped at 1
+     food    healthy / (healthy + poor) over the day's logged meal categories
+     habits  derived habit rows passing (see habitRows())
+     blocks  blocks whose tasks are all done / blocks that have tasks
+   A component with nothing to measure yet is skipped rather than counted as zero, so a day with
+   no meals logged isn't punished for it — the score reflects what you actually track. A day with
+   nothing at all scores 0. Days in the future score 0, never partial. */
+const FOOD_HEALTHY=['veggies','protein','berries','greens','dairy'];
+const FOOD_POOR=['sugary','fried','starch'];
+/* 'grains' is in neither list on purpose: a neutral filler that shouldn't reward or penalise. */
+function foodScore(k){
+  const dd=S.days[k]; if(!dd||!dd.meals||!dd.meals.length) return null;
+  let good=0, bad=0;
+  dd.meals.forEach(function(m){ (m.cats||[]).forEach(function(c){
+    if(FOOD_HEALTHY.indexOf(c)>=0) good++; else if(FOOD_POOR.indexOf(c)>=0) bad++;
+  }); });
+  if(!good&&!bad) return null;
+  return good/(good+bad);
+}
+function blockScore(k){
+  const dd=S.days[k]; if(!dd||!dd.blocks||!dd.blocks.length) return null;
+  const withTasks=dd.blocks.filter(function(b){ return blockTasksFor(b,k).length; });
+  if(!withTasks.length) return null;
+  const cleared=withTasks.filter(function(b){
+    return blockTasksFor(b,k).every(function(t){ return itemDone(t,k); });
+  }).length;
+  return cleared/withTasks.length;
+}
+function habitScore(k){
+  const rows=habitRows(); if(!rows.length) return null;
+  const done=rows.filter(function(h){ return habitDoneOnDay(h.id,k); }).length;
+  return done/rows.length;
+}
+function dayScore(k){
+  if(k>today()) return 0;
+  const dd=S.days[k];
+  const parts=[];
+  if(dd&&dd.water) parts.push(Math.min(1,dd.water/goalOn(k)));
+  const f=foodScore(k); if(f!==null) parts.push(f);
+  const h=habitScore(k); if(h!==null) parts.push(h);
+  const b=blockScore(k); if(b!==null) parts.push(b);
+  if(!parts.length) return 0;
+  return parts.reduce(function(a,x){return a+x;},0)/parts.length;
 }
 /* ===================== no-spend streak ===================== */
 function spentOnDay(dayKey){ return (S.txns||[]).some(function(t){return t.day===dayKey;}); }
@@ -3496,7 +3474,7 @@ function renderDock(){
       qh+='<div class="unitrow qunit'+(dn?' done':'')+(skipped?' skipped':'')+(due?'':' notdue')+'" draggable="'+(dn?'false':'true')+'" ondragstart="onQuestDragStart(event,\''+q.id+'\')" '+
         'ondragover="event.preventDefault();event.stopPropagation();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onTaskRowDrop(event,\''+q.id+'\')">'+
         '<div class="unitmain" onclick="toggleUnit(\''+q.id+'\')">'+
-        '<div class="ring" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:#fff':'')+'">\u2713</div>'+
+        '<div class="ring" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:var(--bgpage)':'')+'">\u2713</div>'+
         '<span class="nm">'+String(q.text).replace(/</g,'&lt;')+'</span>'+
         (assigned?'<span class="tag">'+assigned+'</span>':'')+
         (due?'':'<span class="tag">not today</span>')+
@@ -3550,7 +3528,7 @@ function renderTaskChip(t){
   return '<div class="tbchip'+(dn?' done':'')+'" draggable="true" ondragstart="onTaskDragStart(event,\''+t.id+'\')" '+
     'ondragover="event.preventDefault();event.stopPropagation();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onTaskRowDrop(event,\''+t.id+'\')">'+
     '<div class="tbchip-title">'+
-    '<div class="ring" onclick="toggleUnit(\''+t.id+'\')" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:#fff':'')+'">\u2713</div>'+
+    '<div class="ring" onclick="toggleUnit(\''+t.id+'\')" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:var(--bgpage)':'')+'">\u2713</div>'+
     (prioColor?'<span class="prio" style="background:'+prioColor+'" title="'+t.priority+' priority"></span>':'')+
     '<span class="nm" contenteditable="true" onclick="event.stopPropagation()" onblur="setTaskText(\''+t.id+'\',this.textContent)">'+String(t.text).replace(/</g,'&lt;')+'</span>'+
     '</div>'+
@@ -3690,9 +3668,7 @@ function render(){
       '<div class="offtodaybar" onclick="goToday()">viewing '+vdayLabel().toLowerCase()+
       ' \u00b7 ticking things off here won\u2019t earn or affect streaks \u00b7 <b>back to today</b></div>';
   }
-  let req=[], doneC=0;
-  (S.ritualDefs||[]).forEach(function(rd){ itemsFor(rd.id).forEach(function(i){ if(i.type==='core'||i.type==='med'){ req.push(i); if(isDone(i.id)) doneC++; } }); });
-  const overall=Math.round(((doneC/Math.max(1,req.length))*0.7+Math.min(1,d.water/goalOn(vday()))*0.3)*100);
+  const overall=Math.round(dayScore(vday())*100);
   document.getElementById('dayPct').textContent=overall+'%';
   document.getElementById('dayFill').style.width=overall+'%';
   renderFocusSession();
@@ -4037,7 +4013,8 @@ function dayStats(k){
   const doneN=req.filter(function(i){return dd.done&&dd.done[i.id];}).length;
   const exMin=dd.ex?Object.keys(dd.ex).reduce(function(a,k){return a+dd.ex[k];},0):0;
   const quests=dd.qdone?Object.keys(dd.qdone).length:0;
-  return {habitPct:req.length?doneN/req.length:0, pages:dd.pagesLogged||0, exMin:exMin, waterHit:dd.water>=goalOn(k), quests:quests, hasData:true};
+  return {habitPct:req.length?doneN/req.length:0, pages:dd.pagesLogged||0, exMin:exMin,
+    waterHit:dd.water>=goalOn(k), quests:quests, hasData:true, score:dayScore(k)};
 }
 function renderMonth(){
   const now=new Date(); const y=now.getFullYear(), m=now.getMonth();

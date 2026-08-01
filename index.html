@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>aura farm</title>
+<title>Prism</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -46,49 +49,10 @@
   <div id="settingsPanel" class="settingspanel" style="display:none">
     <div class="card">
       <header><span class="lbl">appearance</span><button class="btn tiny ghost" onclick="toggleSettingsPanel()">✕ close</button></header>
-      <div class="lbl" style="margin-bottom:8px;color:var(--ink-3)">quick themes</div>
-      <div class="presetthemesrow" id="presetThemesRow"></div>
-      <div class="themerow" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
-        <label>mode</label>
-        <button class="btn tiny ghost" id="th-mode-light" onclick="setThemeMode('light')">☀ light</button>
-        <button class="btn tiny ghost" id="th-mode-dark" onclick="setThemeMode('dark')">☾ dark</button>
+      <div style="font-size:11px;color:var(--ink-3);line-height:1.7">
+        Prism Terminal is a single fixed palette. Every colour is a token on <code>S.theme</code>,
+        so a picker can be reattached here without touching the stylesheet.
       </div>
-      <div class="themerow">
-        <label>background</label><input type="color" id="th-bgpage" onchange="setThemeColor('bgpage',this.value)">
-        <label>card background</label><input type="color" id="th-glass" onchange="setThemeColor('glass',this.value)">
-        <label>card background, strong</label><input type="color" id="th-glassStrong" onchange="setThemeColor('glassStrong',this.value)">
-      </div>
-      <div class="themerow">
-        <label>text</label><input type="color" id="th-ink" onchange="setThemeColor('ink',this.value)">
-        <label>text, secondary</label><input type="color" id="th-ink2" onchange="setThemeColor('ink2',this.value)">
-        <label>text, muted</label><input type="color" id="th-ink3" onchange="setThemeColor('ink3',this.value)">
-      </div>
-      <div class="themerow">
-        <label>accent 1 — strawberry</label><input type="color" id="th-pink" onchange="setThemeColor('pink',this.value)">
-        <label>accent 1, deep</label><input type="color" id="th-pinkDeep" onchange="setThemeColor('pinkDeep',this.value)">
-      </div>
-      <div class="themerow">
-        <label>accent 2 — matcha</label><input type="color" id="th-mint" onchange="setThemeColor('mint',this.value)">
-        <label>accent 2, deep</label><input type="color" id="th-mintDeep" onchange="setThemeColor('mintDeep',this.value)">
-      </div>
-      <div class="themerow">
-        <label>font</label>
-        <select id="th-font" onchange="setThemeFont(this.value)">
-          <option value="inter">Inter (default)</option>
-          <option value="serif">Georgia (serif)</option>
-          <option value="rounded">Trebuchet (rounded)</option>
-          <option value="system">System UI</option>
-          <option value="mono">Courier (monospace)</option>
-        </select>
-      </div>
-      <button class="btn tiny ghost" style="margin-top:10px" onclick="resetTheme()">reset to defaults</button>
-      <div class="themerow" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
-        <label>save as theme</label>
-        <input type="text" id="th-saveName" placeholder="theme name" maxlength="30" style="border:1px solid var(--stroke);border-radius:8px;padding:5px 8px;background:var(--glass);font-size:12px;flex:1;min-width:100px"
-          onkeydown="if(event.key==='Enter'){saveCurrentTheme(this.value);this.value=''}">
-        <button class="btn tiny soft" onclick="saveCurrentTheme(document.getElementById('th-saveName').value);document.getElementById('th-saveName').value=''">save</button>
-      </div>
-      <div class="themerow" id="savedThemesRow" style="flex-direction:column;align-items:stretch;gap:6px"></div>
     </div>
   </div>
   <div id="offTodayBar" style="display:none"></div>
