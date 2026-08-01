@@ -4,7 +4,19 @@ Written before any code, per the handoff's Phase 0. Records how the mock's conce
 the state model that already exists, so we don't end up with parallel systems sitting next to
 the real ones.
 
-Status: Phase 0. `v:4` → `v:5`.
+Status: shipped through Phase 5. `v:4` → `v:5`.
+
+| Phase | What landed |
+| ----- | ----------- |
+| 0 | Points economy removed; `v:5` backfills; `spendLog` → `S.txns`; editable water goal |
+| 1 | Terminal palette as tokens; radius tokenised; `dayScore()`; derived habit rows |
+| 2–3 | Mobile shell (header, day-score rings, tracker rings) + money/water/food/notes sheets |
+| 4 | Subtasks nest to any depth; month view draws day-score rings |
+| 5 | Priority-directive focus card; SCAN leads with the day, habit grid moves to BIO |
+
+Still open, in rough priority order: the time rail with pinned tasks (`atMin` is
+backfilled but nothing writes it yet), the full-screen week grid, block recurrence via
+`S.blockRules` + `ensureRuleBlocks()` (§7), and the block editor as a bottom sheet.
 
 ---
 
