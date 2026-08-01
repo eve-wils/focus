@@ -569,6 +569,36 @@ function migrateBlockTasksToUnified(){
   S.blockTasksMigratedAt=Date.now();
   save();
 }
+/* Folds the old per-day plan goals (day.plan.items, shape {t,done}) into S.tasks as ordinary
+   day-assigned tasks. These were the one capture surface that never produced a real task: the
+   week planner already RENDERED S.tasks for each day, but its own "add a goal" input wrote here
+   instead, so anything typed into a day of the week was invisible to the day view, the inbox and
+   the backlog.
+   Deliberately NOT gated on a stamp. addPlanItem no longer writes to plan.items, so after the
+   first pass this list is permanently empty and the loop is a no-op — while a stamp would strand
+   the items again on any restore of a pre-fix backup, which is exactly the trap restorePreUnify
+   has to `delete obj.unifiedAt` to escape. Emptiness is the real guard. */
+function migratePlanItemsToUnified(){
+  let moved=0;
+  Object.keys(S.days).forEach(function(k){
+    const p=S.days[k]&&S.days[k].plan;
+    if(!p||!Array.isArray(p.items)||!p.items.length) return;
+    /* a goal ticked off three weeks ago completed three weeks ago — stamping doneAt with "now"
+       would make every historical item look freshly finished */
+    const parts=k.split('-').map(Number);
+    const dayTs=new Date(parts[0],parts[1]-1,parts[2],12,0,0).getTime();
+    p.items.forEach(function(it){
+      const text=String((it&&it.t)||'').trim(); if(!text) return;
+      S.tasks.push(makeUnit({text:text, kind:'task', day:k, done:!!(it&&it.done),
+        doneAt:(it&&it.done)?dayTs:null, envelope:'work', project:'Uncategorized',
+        source:'planitem'}));
+      moved++;
+    });
+    p.items=[];
+  });
+  if(moved) save();
+  return moved;
+}
 /* one-time import of open items from the "To-Do List" Notion database (all "work" envelope —
    none of these had "Personal" in their Notion Category property; tag = their Notion "project" value) */
 const NOTION_IMPORT_SEED=[
@@ -643,6 +673,7 @@ function flushSave(){
    of edits produces one commit, not one per click. */
 const GH_OWNER='eve-wils', GH_REPO='focus_maxxer', GH_BRANCH='data', GH_PATH='data/state.json';
 const GH_TOKEN_KEY='aura_gh_token';
+const GH_PRECONNECT_BACKUP_KEY='aura_gh_preconnect_backup';
 const GH_PUSH_DEBOUNCE_MS=2000;
 let ghToken=localStorage.getItem(GH_TOKEN_KEY)||'';
 let ghSha=null, ghSyncing=false, ghLastSyncAt=null, ghLastError=null, ghBranchReady=false;
@@ -782,10 +813,27 @@ function ghSyncPanelHtml(){
     '<button class="btn tiny ghost" onclick="ghDisconnect()">disconnect</button>'+
     '<button class="btn tiny ghost" onclick="toggleEdit(null)">close</button></div></div>';
 }
-function submitGhToken(){
+/* connecting used to push this browser's state straight away — fine on the device that's been
+   using the app all along, but a fresh browser/device has blank/default state, and pushing that
+   immediately silently erased whatever was already synced from elsewhere. Pull first, exactly
+   like a normal page load already does once a token is configured, and only push when the
+   branch genuinely has nothing yet. The pre-connect state is snapshotted to localStorage first,
+   purely as a recovery net, in case this device actually did have real data of its own that had
+   simply never been synced before. */
+async function submitGhToken(){
   const el=document.getElementById('ghTokenIn'); const t=el&&el.value;
   if(!t||!t.trim()){ toast('Paste a token first'); return; }
-  ghSetToken(t); toggleEdit(null); toast('Connected — syncing…'); ghPushNow();
+  ghSetToken(t); toggleEdit(null);
+  try{ localStorage.setItem(GH_PRECONNECT_BACKUP_KEY,JSON.stringify(S)); }catch(e){}
+  toast('Connecting…');
+  const remote=await ghPull();
+  if(remote){
+    adoptState(remote);
+    toast('Connected — loaded your existing data from GitHub');
+  } else {
+    ghPushNow();
+    toast('Connected — this device is now the starting point');
+  }
 }
 function ghDisconnect(){ ghSetToken(''); toggleEdit(null); toast('GitHub sync disconnected'); }
 async function ghPullNowManual(){
@@ -858,6 +906,7 @@ function hydrateState(){
   if(S.readGoal===undefined) S.readGoal=150;
   if(S.mediBestSec===undefined) S.mediBestSec=0;
   importNotionSeed(); repairNotionLinks(); migrateBlockTasksToUnified();
+  migratePlanItemsToUnified();
   migrateToUnifiedItems(); normalizeUnits(); guessTaskModes();
   return healUnits();
 }
@@ -1829,19 +1878,20 @@ function weekKeyOf(k){ return weekDatesOf(k||vday())[0]; }
 function planOf(k){ return day(k).plan; }
 let manualPlanDay={};
 function togglePlanDay(k){ const cur=manualPlanDay[k]!==undefined?manualPlanDay[k]:(k===vday()); manualPlanDay[k]=!cur; render(); }
-function addPlanItem(k){
-  const el=document.getElementById('planIn-'+k); if(!el) return;
-  const t=el.value.trim(); if(!t) return;
-  planOf(k).items.push({t:t,done:false});
-  el.value=''; save(); render();
-  requestAnimationFrame(function(){ const e2=document.getElementById('planIn-'+k); if(e2) e2.focus(); });
+/* Creates a REAL task assigned to that day, not a private plan-goal row. renderPlan already lists
+   S.tasks for each day, so what you type into a day of the week now shows up in that day's view,
+   its inbox, and every other surface — which is the whole point of typing it there. */
+function addDayTask(k,inputId){
+  const el=document.getElementById(inputId); if(!el) return;
+  const txt=el.value.trim(); if(!txt) return;
+  const t=addTask(txt,'work','Uncategorized');
+  if(t){ t.day=k; save(); }
+  el.value=''; render();
+  requestAnimationFrame(function(){ const e2=document.getElementById(inputId); if(e2) e2.focus(); });
 }
-function togglePlanItem(k,i){
-  const p=planOf(k), it=p.items[i]; if(!it) return;
-  it.done=!it.done; if(it.done) celebrateBurst();
-  save(); render();
-}
-function delPlanItem(k,i,ev){ if(ev)ev.stopPropagation(); planOf(k).items.splice(i,1); save(); render(); }
+function addPlanItem(k){ addDayTask(k,'planIn-'+k); }
+/* the inbox files into whichever day you're looking at, not always today */
+function addTodayTask(){ addDayTask(vday(),'todayTaskIn'); }
 function setPlanNotes(k,v){ planOf(k).notes=v; save(); }
 /* ===================== task backlog ===================== */
 const ENVELOPES=['work','personal'];
@@ -3767,8 +3817,8 @@ function renderPlan(){
     const dayTasks=S.tasks.filter(function(tk){return tk.day===k&&!tk.blockId;});
     const isToday=k===t;
     const expanded=manualPlanDay[k]!==undefined?manualPlanDay[k]:isToday;
-    const doneN=p.items.filter(function(x){return x.done;}).length+dayTasks.filter(function(x){return x.done;}).length;
-    const totalN=p.items.length+dayTasks.length;
+    const doneN=dayTasks.filter(function(x){return x.done;}).length;
+    const totalN=dayTasks.length;
     const dnum=+k.split('-')[2];
     const isSel=k===vday();
     h+='<div class="planday'+(expanded?'':' collapsed')+(isToday?' istoday':'')+(isSel?' isselected':'')+'" '+
@@ -3778,12 +3828,7 @@ function renderPlan(){
        '<button class="btn tiny ghost" onclick="event.stopPropagation();openDay(\''+k+'\')">open</button></div>'+
        '<div class="pdbody">';
     dayTasks.forEach(function(tk){ h+=taskRowHTML(tk,'plan'); });
-    p.items.forEach(function(it,idx){
-      h+='<div class="plangoal'+(it.done?' done':'')+'"><input type="checkbox"'+(it.done?' checked':'')+' onchange="togglePlanItem(\''+k+'\','+idx+')">'+
-         '<span class="pgt">'+String(it.t).replace(/</g,'&lt;')+'</span>'+
-         '<button class="rowbtn" style="opacity:.4" onclick="delPlanItem(\''+k+'\','+idx+',event)">✕</button></div>';
-    });
-    h+='<div class="addtiny"><input id="planIn-'+k+'" placeholder="add a goal…" maxlength="50" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addPlanItem(\''+k+'\')}">'+
+    h+='<div class="addtiny"><input id="planIn-'+k+'" placeholder="add a task…" maxlength="50" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addPlanItem(\''+k+'\')}">'+
        '<button class="btn tiny soft" onclick="addPlanItem(\''+k+'\')">+</button></div>'+
        '<textarea class="plannotes" placeholder="notes…" onchange="setPlanNotes(\''+k+'\',this.value)">'+String(p.notes||'').replace(/</g,'&lt;')+'</textarea>'+
        '</div></div>';
@@ -3937,14 +3982,17 @@ function renderTodayTasksCard(){
   const allToday=S.tasks.filter(function(t){return t.day===tKey;});
   const card=document.getElementById('todayTasksCard');
   if(!card) return;
-  if(!allToday.length||allToday.every(function(t){return t.done;})){ card.style.display='none'; return; }
+  /* the card stays up even with nothing on the day — it holds the only way to
+     add a task from the day view, so hiding it when empty stranded you. */
   card.style.display='';
   const doneN=allToday.filter(function(t){return t.done;}).length;
-  const bar=document.getElementById('todayTasksBar'); if(bar) bar.style.width=Math.round(doneN/allToday.length*100)+'%';
-  const n=document.getElementById('todayTasksN'); if(n) n.textContent=doneN+'/'+allToday.length;
+  const pct=allToday.length?Math.round(doneN/allToday.length*100):0;
+  const bar=document.getElementById('todayTasksBar'); if(bar) bar.style.width=pct+'%';
+  const n=document.getElementById('todayTasksN'); if(n) n.textContent=allToday.length?doneN+'/'+allToday.length:'';
   const unpinned=allToday.filter(function(t){return !t.blockId;}).sort(byOrder);
   const list=document.getElementById('todayTasksList');
-  if(list) list.innerHTML=unpinned.length?unpinned.map(function(t){return taskRowHTML(t,'flat');}).join(''):'<div class="qempty">everything is pinned into the calendar below</div>';
+  if(list) list.innerHTML=unpinned.length?unpinned.map(function(t){return taskRowHTML(t,'flat');}).join('')
+    :'<div class="qempty">'+(allToday.length?'everything is pinned into the calendar below':'nothing on this day yet — add one below')+'</div>';
 }
 function renderPapers(){
   const list=document.getElementById('paperList');
@@ -3975,15 +4023,6 @@ function renderPapers(){
     const done=S.papers.filter(function(p){return p.status==='notes taken';}).length;
     cnt.textContent=S.papers.length?done+'/'+S.papers.length+' with notes':'';
   }
-}
-function renderUnassignedBanner(){
-  const box=document.getElementById('unassignedBanner');
-  if(!box) return;
-  if(viewMode!=='today'){ box.style.display='none'; return; }
-  const n=S.tasks.filter(function(t){return isBacklogTask(t)&&t.day===null;}).length;
-  if(!n){ box.style.display='none'; return; }
-  box.style.display='';
-  box.innerHTML='<div class="unassignedbar" onclick="setView(\'planning\')">'+n+' unassigned task'+(n===1?'':'s')+' →</div>';
 }
 function render(){
   VIEWS.forEach(function(v){
@@ -4028,7 +4067,7 @@ function render(){
   renderRitualQuickRow();
   if(viewMode==='notes'){ renderNotes(); return; }
   if(viewMode==='month'){ renderMonth(); return; }
-  if(viewMode==='planning'){ renderTaskBank(); renderFutureLog(); renderPlan(); renderUnassignedBanner(); return; }
+  if(viewMode==='planning'){ renderTaskBank(); renderFutureLog(); renderPlan(); return; }
   /* everything below here used to be gated to the today view only, back when every one of these
      cards lived there. Now most of them (water detail, habit streaks, meditation, books,
      movement, spend, papers, today's-tasks) live in the more tab instead — but their
@@ -4036,7 +4075,7 @@ function render(){
      to just keep refreshing them every render() regardless of which tab is on screen, and only
      gate the two genuinely today-only pieces (the timeline itself and the quest dock). */
   if(viewMode==='today'){ renderTimeline(); renderDock(); }
-  renderTodayTasksCard(); renderPapers(); renderUnassignedBanner();
+  renderTodayTasksCard(); renderPapers();
   document.getElementById('cnt-day').textContent=d.blocks.filter(isBlockCleared).length+'/'+d.blocks.length+' blocks cleared';
   const v=vessel();
   const numCups=Math.max(1,Math.round(goalOn(vday())/v.oz));
