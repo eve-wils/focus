@@ -838,3 +838,85 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 @keyframes burstFly{0%{opacity:1;transform:translate(-50%,-50%) scale(.6)}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1.15)}}
 .footnote{margin-top:22px;text-align:center;font-size:11px;color:var(--ink-3)}
 .footnote button{text-decoration:underline;color:var(--ink-2)}
+
+/* ===================== Prism Terminal — mobile shell =====================
+   A phone-first frame that wraps the existing views rather than replacing them: the header, the
+   four tracker rings and the bottom tab bar are new, but SCAN/TASKS/BIO/GRID drive the same
+   setView() router the desktop tabs do, so there is one source of truth for which view is up.
+   Everything here is hidden above 760px, where the desktop hero and tab strip take over. */
+#prismShell{display:none}
+.pshead{padding:12px 14px 10px;border-bottom:1px dashed var(--stroke);background:var(--bgpage)}
+.psbar{display:flex;justify-content:space-between;align-items:center;
+  font-size:9px;letter-spacing:1.5px;color:var(--ink-3)}
+.psdayrow{display:flex;align-items:center;gap:9px;margin-top:9px}
+.psnum{flex:none}
+.psnum .mo{font-size:9px;letter-spacing:1.6px;color:var(--ink-3)}
+.psnum .dd{font-size:22px;font-weight:600;color:var(--mint-deep);letter-spacing:-1px;line-height:1}
+.psweek{flex:1;display:flex;align-items:center;justify-content:space-between;gap:2px}
+.psarrow{background:none;border:none;color:var(--ink-3);font-size:13px;
+  min-height:44px;min-width:24px;cursor:pointer}
+.psdot{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:none;border:none;cursor:pointer;padding:7px 0;min-height:44px}
+.psdot .rw{position:relative;width:29px;height:29px}
+.psdot .rw>svg{width:29px;height:29px;transform:rotate(-90deg)}
+.psdot .face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:500;color:var(--ink-2)}
+.psdot.on .face{color:var(--bgpage);font-weight:600}
+.psdot.on .rw::before{content:'';position:absolute;inset:3px;border-radius:50%;background:var(--mint-deep)}
+.psdot .face{z-index:1}
+.psrings{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.psring{display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;
+  cursor:pointer;padding:2px 0;min-height:44px}
+.psring .rw{position:relative;width:52px;height:52px}
+.psring .rw>svg{width:52px;height:52px;transform:rotate(-90deg)}
+/* the glyph is itself an inline SVG for apple/pencil — it must not inherit the ring's
+   size or its -90deg rotation, hence the direct-child selector above */
+.psring .gl svg{width:16px;height:16px;transform:none}
+.psring .gl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:500}
+.psring .vl{font-size:9.5px;letter-spacing:.6px;color:var(--ink-3);white-space:nowrap}
+.psprog{display:flex;align-items:center;gap:8px;margin-top:12px}
+.psprog .track{flex:1;height:5px;background:var(--glass-strong);overflow:hidden}
+.psprog .fill{height:100%;background:var(--mint-deep);transition:width .4s ease}
+.psprog .cap{font-size:9.5px;letter-spacing:.8px;color:var(--ink-2);white-space:nowrap}
+/* ===== bottom sheets ===== */
+#sheetScrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:70}
+#sheetScrim.open{display:block}
+.pssheet{display:none;position:fixed;left:0;right:0;bottom:0;z-index:71;max-height:86vh;
+  overflow-y:auto;background:var(--glass);border-top:1px solid var(--stroke);padding:14px 16px 26px}
+.pssheet.open{display:block}
+.pssheethead{display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px dashed var(--stroke);padding-bottom:9px}
+.pssheethead .ttl{font-size:10px;font-weight:500;letter-spacing:2.4px}
+.pssheethead button{background:none;border:none;color:var(--ink-2);font-size:15px;
+  min-height:44px;min-width:44px;cursor:pointer}
+.psbig{display:flex;align-items:baseline;gap:9px;margin-top:12px}
+.psbig .v{font-size:30px;font-weight:600}
+.psbig .u{font-size:10.5px;letter-spacing:1.2px;color:var(--ink-3)}
+.pssec{font-size:10px;letter-spacing:1.4px;color:var(--ink-3);margin:16px 0 8px}
+.psin{width:100%;background:var(--bgpage);border:1px solid var(--stroke);color:var(--ink);
+  font-family:var(--serif);font-size:12.5px;padding:11px;min-height:44px}
+.psbtn{width:100%;min-height:48px;margin-top:10px;background:var(--mint-deep);color:var(--bgpage);
+  border:none;font-family:var(--serif);font-size:12px;font-weight:600;letter-spacing:2px;cursor:pointer}
+.psghost{width:100%;min-height:44px;margin-top:8px;background:none;border:1px solid var(--stroke);
+  color:var(--ink-2);font-family:var(--serif);font-size:11.5px;letter-spacing:1.6px;cursor:pointer}
+.pschip{min-height:40px;padding:9px 12px;background:none;border:1px solid var(--stroke);
+  color:var(--ink-2);font-family:var(--serif);font-size:10.5px;letter-spacing:1.2px;cursor:pointer}
+.pschip.on{background:var(--mint-deep);border-color:var(--mint-deep);color:var(--bgpage);font-weight:500}
+.pschip.good.on{background:var(--mint-deep);border-color:var(--mint-deep)}
+.pschip.bad.on{background:var(--alert);border-color:var(--alert);color:var(--bgpage)}
+.pschips{display:flex;flex-wrap:wrap;gap:7px}
+.psrow{display:flex;justify-content:space-between;gap:10px;padding:9px 0;
+  border-bottom:1px solid var(--rule);align-items:flex-start}
+.psrow .nm{font-size:12px;color:var(--ink-2);min-width:0;word-break:break-word}
+.psrow .mt{font-size:9.5px;letter-spacing:1px;color:var(--ink-3)}
+.psrow .amt{font-size:12px;font-weight:500;color:var(--pink-deep);white-space:nowrap}
+.psrow .del{background:none;border:none;color:var(--ink-3);font-size:13px;
+  min-height:44px;min-width:36px;cursor:pointer}
+.pslist{margin-top:12px}
+@media (max-width:760px){
+  body{padding:0 0 64px}
+  .wrap{margin:0 auto;padding:0 12px}
+  .hero,.viewtabs{display:none}
+  #prismShell{display:block}
+}

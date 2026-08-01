@@ -1086,6 +1086,12 @@ function day(k){ k=k||today();
   if(!d.focusSegs) d.focusSegs={};
   return d; }
 function vessel(){ return S.vessels[S.vesselIdx]||S.vessels[0]||{name:'Cup',oz:20}; }
+/* resize the cup in place rather than adding another vessel — the sheet offers one number, not a
+   vessel picker, so editing it should change the cup you already use */
+function setVesselOz(v){
+  const n=Math.round(parseFloat(v)||0); if(n<=0) return;
+  const ve=vessel(); ve.oz=n; save(); render();
+}
 function nowMinutes(){ const n=new Date(); const h=n.getHours()<ROLLOVER?n.getHours()+24:n.getHours(); return h*60+n.getMinutes(); }
 function phase(){ const m=nowMinutes(); if(m<12*60) return 'sunrise'; if(m<17*60) return 'day'; return 'moonlight'; }
 function reconcile(){
@@ -1731,8 +1737,13 @@ let manualPanel={};
    false = explicitly closed, overriding even the current-block default. Only one panel shows at
    once now that expanding means "open a side drawer" instead of "grow inline". */
 let panelOverride;
+/* on a phone the detail panel is a full-screen drawer, so auto-opening the current block would
+   mean landing on a block editor instead of the day. Desktop keeps the auto-open, where the panel
+   is a 360px drawer alongside the timeline and costs nothing. Tapping a block still opens it. */
+function isPhone(){ return typeof window!=='undefined'&&window.innerWidth<=760; }
 function openBlockId(){
   if(panelOverride!==undefined) return panelOverride||null;
+  if(isPhone()) return null;
   const d=day(vday());
   const curB=(d.blocks||[]).filter(function(b){return isCurrentBlock(b);})[0];
   return curB?curB.id:null;
@@ -3051,6 +3062,256 @@ function panelExpanded(r){
     : (r==='sunrise' ? (!allDone && nm<12*60) : (!allDone && nm>=17*60));
   return manualPanel[r]!==undefined?manualPanel[r]:def;
 }
+/* ===================== Prism Terminal — mobile shell =====================
+   The phone frame from the redesign: a sticky header (stardate, day-of-week score rings, four
+   tracker rings, day progress) and a four-tab bottom bar. It does NOT own navigation state — the
+   tabs call setView(), the same router the desktop tab strip uses, so there is exactly one idea
+   of which view is showing. Everything here reads the same state the desktop cards do. */
+let openSheetKind=null;
+/* stardate, purely decorative: years since 1946 + day-of-year + the fraction of the day elapsed */
+function stardate(){
+  const n=new Date();
+  const doy=Math.floor((n-new Date(n.getFullYear(),0,0))/86400000);
+  return 'SD '+(n.getFullYear()-1946)+String(doy).padStart(3,'0')+'.'+
+    Math.floor((n.getHours()*60+n.getMinutes())/144);
+}
+/* an SVG progress ring. pct 0..1, drawn from 12 o'clock via the -90deg rotate in CSS. */
+function ringSvg(pct,color,r,sw){
+  const C=2*Math.PI*r;
+  const off=C*(1-Math.max(0,Math.min(1,pct)));
+  return '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="'+r+'" fill="none" stroke="var(--glass-strong)" stroke-width="'+sw+'"></circle>'+
+    '<circle cx="50" cy="50" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+sw+'" '+
+    'stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'"></circle></svg>';
+}
+function scoreColor(sc){ return sc>=0.75?'var(--mint-deep)':sc>=0.45?'var(--aqua-deep)':'#3b6b47'; }
+/* the four tracker rings. Each returns {pct, color, glyph, value} and opens its sheet. */
+function trackerRings(){
+  const k=vday(), d=day(k);
+  const monthly=budgetMonthlyCents(), spent=spentInPeriod();
+  const f=foodScore(k);
+  const notesToday=(S.logEntries||[]).filter(function(n){return n.day===k;}).length;
+  const APPLE='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.2 8.3c-1 0-2 .5-2.9.5-.9 0-1.9-.5-3-.5-1.6 0-3.9 1.4-3.9 5 0 3.5 2.7 7.8 4.3 7.8.8 0 1.3-.5 2.5-.5s1.6.5 2.5.5c1.4 0 3.1-2.7 3.9-4.3-2.6-1.1-2.9-5.4.2-6.6-.9-1.2-2.2-1.9-3.6-1.9zM13 5.3c.7-.9 1.2-2.1 1-3.3-1.1.1-2.4.8-3.1 1.7-.7.8-1.3 2-1.1 3.2 1.2.1 2.5-.6 3.2-1.6z"></path></svg>';
+  const PENCIL='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20l1-4.5L15.5 5l3.5 3.5L8.5 19 4 20z"></path><path d="M13.2 6.8l3.5 3.5"></path></svg>';
+  return [
+    {kind:'money', glyph:'$', color:'var(--pink-deep)',
+     pct: monthly?Math.max(0,(monthly-spent))/monthly:0,
+     value: monthly?dollarsStr(Math.max(0,monthly-spent)):dollarsStr(spent)},
+    {kind:'food', glyph:APPLE, color:(f===null?'var(--ink-3)':f>=0.6?'var(--mint-deep)':f>=0.35?'var(--pink-deep)':'var(--alert)'),
+     pct:(f===null?0:f), value:(f===null?'—':Math.round(f*100)+'%')},
+    {kind:'water', glyph:'≋', color:'var(--aqua-deep)',
+     pct: Math.min(1,d.water/goalOn(k)), value: d.water+'oz'},
+    {kind:'notes', glyph:PENCIL, color:'var(--mint-deep)',
+     pct: notesToday?1:0, value: notesToday?notesToday+' logged':'—'},
+  ];
+}
+function renderPrismShell(){
+  const host=document.getElementById('prismShell');
+  if(!host) return;
+  const k=vday(), d=day(k);
+  const p=k.split('-').map(Number), dt=new Date(p[0],p[1]-1,p[2]);
+  /* the week containing the viewed day, Sunday-first to match the design */
+  const wkStart=new Date(dt); wkStart.setDate(dt.getDate()-dt.getDay());
+  const letters=['S','M','T','W','T','F','S'];
+  let dots='';
+  for(let i=0;i<7;i++){
+    const dd=new Date(wkStart); dd.setDate(wkStart.getDate()+i);
+    const dk=dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+    const sc=dayScore(dk), sel=dk===k;
+    dots+='<button class="psdot'+(sel?' on':'')+'" onclick="setViewDay(\''+dk+'\')" title="'+dk+'">'+
+      '<span class="rw">'+ringSvg(sc,scoreColor(sc),43,9)+'<span class="face">'+letters[i]+'</span></span></button>';
+  }
+  let rings='';
+  trackerRings().forEach(function(r){
+    rings+='<button class="psring" onclick="openSheet(\''+r.kind+'\')">'+
+      '<span class="rw">'+ringSvg(r.pct,r.color,43,7)+
+      '<span class="gl" style="color:'+r.color+'">'+r.glyph+'</span></span>'+
+      '<span class="vl">'+r.value+'</span></button>';
+  });
+  const blocks=(d.blocks||[]).filter(function(b){ return blockTasksFor(b,k).length; });
+  const cleared=blocks.filter(function(b){ return blockTasksFor(b,k).every(function(t){return itemDone(t,k);}); }).length;
+  const pct=blocks.length?Math.round(cleared/blocks.length*100):0;
+  host.innerHTML=
+    '<div class="pshead">'+
+      '<div class="psbar"><span>PRISM MK VII · LOCAL</span><span>'+stardate()+'</span></div>'+
+      '<div class="psdayrow">'+
+        '<div class="psnum"><div class="mo">'+dt.toLocaleDateString(undefined,{month:'short'}).toUpperCase()+'</div>'+
+        '<div class="dd">'+dt.getDate()+'</div></div>'+
+        '<div class="psweek">'+
+          '<button class="psarrow" onclick="shiftViewDay(-7)">←</button>'+dots+
+          '<button class="psarrow" onclick="shiftViewDay(7)">→</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="psrings">'+rings+'</div>'+
+      '<div class="psprog"><div class="track"><div class="fill" style="width:'+pct+'%"></div></div>'+
+        '<span class="cap">'+cleared+'/'+blocks.length+' · '+pct+'%</span></div>'+
+    '</div>';
+  renderSheets();
+}
+/* ===================== tracker sheets ===================== */
+function openSheet(kind){ openSheetKind=kind; mealDraft=[]; render(); }
+function closeSheet(){ openSheetKind=null; render(); }
+let mealDraft=[];
+function toggleMealCat(c){
+  mealDraft=mealDraft.indexOf(c)>=0?mealDraft.filter(function(x){return x!==c;}):mealDraft.concat([c]);
+  render();
+}
+function saveMeal(){
+  if(!mealDraft.length) return;
+  const d=day(vday());
+  d.meals.push({id:'ml'+Date.now(), at:Date.now(), cats:mealDraft.slice()});
+  mealDraft=[]; save(); render(); toast('Meal logged');
+}
+function delMeal(id,ev){ if(ev)ev.stopPropagation(); if(!arm('ml:'+id)) return;
+  const d=day(vday()); d.meals=d.meals.filter(function(m){return m.id!==id;});
+  armed=null; save(); render();
+}
+function saveNote(){
+  const el=document.getElementById('noteDraft'); if(!el) return;
+  const v=(el.value||'').trim(); if(!v) return;
+  S.logEntries.unshift({id:'lg'+Date.now(), at:Date.now(), day:vday(), text:v});
+  el.value=''; save(); render(); toast('Entry filed');
+}
+function setNoteText(id,v){
+  const n=(S.logEntries||[]).filter(function(x){return x.id===id;})[0];
+  if(!n) return; n.text=v; save();
+}
+function delNote(id,ev){ if(ev)ev.stopPropagation(); if(!arm('lg:'+id)) return;
+  S.logEntries=S.logEntries.filter(function(n){return n.id!==id;});
+  armed=null; save(); render();
+}
+function submitTxn(){
+  const n=document.getElementById('txnName'), a=document.getElementById('txnAmt'),
+        dd=document.getElementById('txnDay'), c=document.getElementById('txnCat');
+  const name=(n&&n.value||'').trim(), amt=Math.round((parseFloat(a&&a.value)||0)*100);
+  if(!name||amt<=0) return;
+  logSpend(name,amt,(dd&&dd.value)||vday(),(c&&c.value)||'Uncategorized');
+  n.value=''; a.value='';
+}
+function submitTxnCat(){
+  const el=document.getElementById('newTxnCat'); if(!el) return;
+  addTxnCat(el.value); el.value='';
+}
+const FOOD_CHIPS=[
+  {id:'veggies',cls:'good'},{id:'protein',cls:'good'},{id:'berries',cls:'good'},
+  {id:'greens',cls:'good'},{id:'dairy',cls:'good'},{id:'grains',cls:''},
+  {id:'starch',cls:'bad'},{id:'fried',cls:'bad'},{id:'sugary',cls:'bad'}
+];
+function sheetHead(title,color){
+  return '<div class="pssheethead"><span class="ttl" style="color:'+color+'">'+title+'</span>'+
+    '<button onclick="closeSheet()">✕</button></div>';
+}
+function renderSheets(){
+  const scrim=document.getElementById('sheetScrim');
+  if(scrim) scrim.classList.toggle('open',!!openSheetKind);
+  ['Money','Water','Food','Notes'].forEach(function(n){
+    const el=document.getElementById('sheet'+n);
+    if(el) el.classList.toggle('open',openSheetKind===n.toLowerCase());
+  });
+  const k=vday(), d=day(k);
+  /* --- money --- */
+  const mEl=document.getElementById('sheetMoney');
+  if(mEl&&openSheetKind==='money'){
+    const monthly=budgetMonthlyCents(), spent=spentInPeriod(), left=monthly-spent;
+    const rows=(S.txns||[]).slice(0,25).map(function(t){
+      const a=armed==='sp:'+t.id;
+      return '<div class="psrow"><div style="flex:1;min-width:0">'+
+        '<div class="nm">'+String(t.name).replace(/</g,'&lt;')+'</div>'+
+        '<div class="mt">'+String(t.cat||'').toUpperCase()+' · '+t.day+'</div></div>'+
+        '<span class="amt">−'+dollarsStr(t.amountCents)+'</span>'+
+        '<button class="del" onclick="delSpend(\''+t.id+'\',event)">'+(a?'!':'✕')+'</button></div>';
+    }).join('')||'<div class="mt" style="color:var(--ink-3);font-size:11px">nothing logged yet</div>';
+    mEl.innerHTML=sheetHead('RESOURCE ALLOCATION','var(--pink-deep)')+
+      '<div class="psbig"><span class="v" style="color:var(--pink-deep)">'+
+        (monthly?dollarsStr(Math.max(0,left)):dollarsStr(spent))+'</span>'+
+        '<span class="u">'+(monthly?'REMAINING OF '+dollarsStr(monthly):'SPENT THIS PERIOD')+'</span></div>'+
+      '<div class="track" style="height:7px;background:var(--glass-strong);margin-top:9px">'+
+        '<div style="height:100%;background:var(--pink-deep);width:'+
+        (monthly?Math.min(100,Math.max(0,Math.round(spent/monthly*100))):0)+'%"></div></div>'+
+      '<div class="pssec">&gt; monthly budget</div>'+
+      '<input class="psin" id="budgetIn" inputmode="decimal" placeholder="0.00" value="'+
+        (monthly?(monthly/100).toFixed(2):'')+'" onchange="setBudgetMonthly(this.value)">'+
+      '<div class="pssec">&gt; log transaction</div>'+
+      '<input class="psin" id="txnName" placeholder="DESCRIPTION">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">'+
+        '<input class="psin" id="txnAmt" inputmode="decimal" placeholder="AMOUNT $">'+
+        '<input class="psin" id="txnDay" type="date" value="'+k+'">'+
+      '</div>'+
+      '<select class="psin" id="txnCat" style="margin-top:8px">'+
+        (S.txnCats||[]).map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('')+
+      '</select>'+
+      '<button class="psbtn" onclick="submitTxn()">RECORD TRANSACTION</button>'+
+      '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px">'+
+        '<input class="psin" id="newTxnCat" placeholder="NEW CATEGORY">'+
+        '<button class="pschip" onclick="submitTxnCat()">+ ADD</button></div>'+
+      '<div class="pslist">'+rows+'</div>';
+  }
+  /* --- water: reuses addWater/d.log so undo, streaks and freezes keep working --- */
+  const wEl=document.getElementById('sheetWater');
+  if(wEl&&openSheetKind==='water'){
+    const g=goalOn(k), v=vessel();
+    wEl.innerHTML=sheetHead('HYDRATION LEVELS','var(--aqua-deep)')+
+      '<div class="psbig"><span class="v" style="color:var(--aqua-deep)">'+d.water+'oz</span>'+
+        '<span class="u">OF '+g+'oz GOAL</span></div>'+
+      '<div class="track" style="height:7px;background:var(--glass-strong);margin-top:9px">'+
+        '<div style="height:100%;background:var(--aqua-deep);width:'+Math.min(100,Math.round(d.water/g*100))+'%"></div></div>'+
+      '<button class="psbtn" onclick="addWater(\'full\')">+ LOG '+v.oz+'oz CUP</button>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<button class="psghost" onclick="addWater(\'half\')">+ HALF CUP</button>'+
+        '<button class="psghost" onclick="addWater(\'undo\')">UNDO</button></div>'+
+      '<div class="pssec">&gt; calibrate</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<div><div class="mt" style="font-size:9px;letter-spacing:1.5px;color:var(--ink-3);margin-bottom:5px">CUP SIZE (OZ)</div>'+
+          '<input class="psin" inputmode="numeric" value="'+v.oz+'" onchange="setVesselOz(this.value)"></div>'+
+        '<div><div class="mt" style="font-size:9px;letter-spacing:1.5px;color:var(--ink-3);margin-bottom:5px">DAILY GOAL (OZ)</div>'+
+          '<input class="psin" inputmode="numeric" value="'+waterGoal()+'" onchange="setWaterGoal(this.value)"></div>'+
+      '</div>'+
+      '<div class="pssec">&gt; streak</div>'+
+      '<div class="mt" style="color:var(--ink-2);font-size:11.5px">'+S.waterStreak+
+        ' day streak · best '+S.waterBest+' · '+S.freezes+' freeze'+(S.freezes===1?'':'s')+'</div>';
+  }
+  /* --- food --- */
+  const fEl=document.getElementById('sheetFood');
+  if(fEl&&openSheetKind==='food'){
+    const f=foodScore(k);
+    const verdict=f===null?'NO DATA':f>=0.75?'CLEAN':f>=0.5?'BALANCED':f>=0.3?'HEAVY':'FLAGGED';
+    const col=f===null?'var(--ink-3)':f>=0.6?'var(--mint-deep)':f>=0.35?'var(--pink-deep)':'var(--alert)';
+    const meals=(d.meals||[]).slice().reverse().map(function(m){
+      const a=armed==='ml:'+m.id;
+      const t=new Date(m.at).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+      return '<div class="psrow"><div style="flex:1;min-width:0">'+
+        '<div class="nm">'+(m.cats||[]).join(' · ')+'</div>'+
+        '<div class="mt">'+t+'</div></div>'+
+        '<button class="del" onclick="delMeal(\''+m.id+'\',event)">'+(a?'!':'✕')+'</button></div>';
+    }).join('')||'<div class="mt" style="color:var(--ink-3);font-size:11px">nothing logged today</div>';
+    fEl.innerHTML=sheetHead('NUTRITIONAL INTAKE',col)+
+      '<div class="psbig"><span class="v" style="font-size:24px;color:'+col+'">'+verdict+'</span>'+
+        '<span class="u">'+(d.meals||[]).length+' MEAL'+((d.meals||[]).length===1?'':'S')+' TODAY</span></div>'+
+      '<div class="pssec">&gt; select composition</div>'+
+      '<div class="pschips">'+FOOD_CHIPS.map(function(c){
+        return '<button class="pschip '+c.cls+(mealDraft.indexOf(c.id)>=0?' on':'')+
+          '" onclick="toggleMealCat(\''+c.id+'\')">'+c.id.toUpperCase()+'</button>';
+      }).join('')+'</div>'+
+      '<button class="psbtn" onclick="saveMeal()">LOG MEAL</button>'+
+      '<div class="pslist">'+meals+'</div>';
+  }
+  /* --- notes --- */
+  const nEl=document.getElementById('sheetNotes');
+  if(nEl&&openSheetKind==='notes'){
+    const list=(S.logEntries||[]).slice(0,40).map(function(n){
+      const a=armed==='lg:'+n.id;
+      const when=new Date(n.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      return '<div class="psrow"><div style="flex:1;min-width:0">'+
+        '<div class="mt">'+when.toUpperCase()+'</div>'+
+        '<textarea class="psin" style="margin-top:4px;min-height:60px" onchange="setNoteText(\''+n.id+'\',this.value)">'+
+        String(n.text).replace(/</g,'&lt;')+'</textarea></div>'+
+        '<button class="del" onclick="delNote(\''+n.id+'\',event)">'+(a?'!':'✕')+'</button></div>';
+    }).join('')||'<div class="mt" style="color:var(--ink-3);font-size:11px">no entries yet</div>';
+    nEl.innerHTML=sheetHead('PERSONAL LOG ENTRY','var(--mint-deep)')+
+      '<textarea class="psin" id="noteDraft" style="height:96px;margin-top:12px" placeholder="BEGIN DICTATION…"></textarea>'+
+      '<button class="psbtn" onclick="saveNote()">FILE ENTRY</button>'+
+      '<div class="pslist">'+list+'</div>';
+  }
+}
 /* ===================== render ===================== */
 function ritualFullyDone(r){
   const items=itemsFor(r).concat(ritualQuests(r));
@@ -3671,6 +3932,7 @@ function render(){
   const overall=Math.round(dayScore(vday())*100);
   document.getElementById('dayPct').textContent=overall+'%';
   document.getElementById('dayFill').style.width=overall+'%';
+  renderPrismShell();
   renderFocusSession();
   /* water lives in the app header now (waterHeader/waterFillHeader/cupCaptionHeader), so it has
      to render on every view, not just today — this block runs before the view branches below,

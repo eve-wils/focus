@@ -11,6 +11,9 @@
 </head>
 <body>
 <div class="aura a1"></div><div class="aura a2"></div><div class="aura a3"></div>
+<!-- Prism Terminal mobile shell: header + tab bar. Hidden above 760px, where the desktop
+     hero/tab strip takes over. Both drive the same setView() router. -->
+<div id="prismShell"></div>
 <div class="wrap">
   <div class="hero">
     <div class="left">
@@ -317,13 +320,19 @@
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="onImportFile(event)">
   </div>
 </div>
+<!-- Four terminal tabs, driving the same setView() router as the desktop strip. `notes` and
+     `more` have no tab of their own on the phone: their cards live under BIO and GRID. -->
 <nav class="mobilenav" id="mobileNav">
-  <button class="mtabb" id="btab-today" onclick="setView('today')"><b>▦</b>today</button>
-  <button class="mtabb" id="btab-planning" onclick="setView('planning')"><b>▤</b>week</button>
-  <button class="mtabb" id="btab-month" onclick="setView('month')"><b>▩</b>month</button>
-  <button class="mtabb" id="btab-notes" onclick="setView('notes')"><b>✎</b>notes</button>
-  <button class="mtabb" id="btab-more" onclick="setView('more')"><b>⋯</b>more</button>
+  <button class="mtabb" id="btab-today" onclick="setView('today')"><b>◉</b>scan</button>
+  <button class="mtabb" id="btab-planning" onclick="setView('planning')"><b>≡</b>tasks</button>
+  <button class="mtabb" id="btab-more" onclick="setView('more')"><b>♥</b>bio</button>
+  <button class="mtabb" id="btab-month" onclick="setView('month')"><b>▦</b>grid</button>
 </nav>
+<div id="sheetScrim" onclick="closeSheet()"></div>
+<div class="pssheet" id="sheetMoney"></div>
+<div class="pssheet" id="sheetWater"></div>
+<div class="pssheet" id="sheetFood"></div>
+<div class="pssheet" id="sheetNotes"></div>
 <script src="app.js"></script>
 </body>
 </html>
