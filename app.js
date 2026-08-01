@@ -52,8 +52,8 @@ const CAT_COLORS={home:'#9b7fd4', work:'#7dfaa0', meeting:'#e8a33d', reading:'#4
 const CARD_COL_IDS=['todayColA','todayColB','todayColC', 'weekColA', 'weekColB', 'weekColC', 'moreColA','moreColB','moreColC'];
 const DEFAULT_LAYOUT_COLS=[
   ['card-day'],
-  ['todayTasksCard','questCard'],
-  [],
+  ['todayTasksCard'],
+  ['questCard'],
   ['taskBankCard'],
   ['weekPlanCard'],
   ['futureLogCard'],
@@ -325,6 +325,9 @@ function relocateHabitCard(){
       if(S.layout.cols[BIO_COL].indexOf('habitStreakCard')<0) S.layout.cols[BIO_COL].unshift('habitStreakCard');
     }
   });
+  /* moving the habit grid out left the third today-column empty on desktop, which reads as a
+     layout bug rather than as space. Spread what's left across the two free columns. */
+  if(!S.layout.cols[2].length&&S.layout.cols[1].length>1) S.layout.cols[2].push(S.layout.cols[1].pop());
   S.habitCardMovedAt=Date.now();
 }
 /* v:5 — the redesign replaced the palette outright, so a theme saved under the old system is
