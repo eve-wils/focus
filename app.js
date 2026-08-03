@@ -1660,10 +1660,15 @@ function unitMoreHTML(t,ctx){
       ph+='<button class="moreact'+(editing==='mode:'+id?' on':'')+'" title="quick, simple, hours, timed, or a count" onclick="event.stopPropagation();toggleEdit(\'mode:'+id+'\')">◇ '+
           (TASK_MODES.filter(function(x){return x.id===modeOf(t);})[0]||{name:'simple'}).name+'</button>';
     ph+='<button class="moreact'+(editing==='sched:'+id?' on':'')+'" onclick="event.stopPropagation();toggleEdit(\'sched:'+id+'\')">⟳ repeat'+(isRecurring(t)?' · '+schedLabel(t):'')+'</button>';
+    /* the bank is the main place you'd want this — it's where an unplanned task sits, and until
+       now the only way out of it onto a specific weekday was a press-and-drag onto the strip */
+    if(isTask)
+      ph+='<button class="moreact'+(editing==='dayp:'+id?' on':'')+'" title="put it on a specific day" onclick="event.stopPropagation();toggleEdit(\'dayp:'+id+'\')">▦ plan a day</button>';
     if(isTask)
       ph+='<select class="moreact" onclick="event.stopPropagation()" onchange="setTaskProject(\''+id+'\',this.value)">'+categoryOptionsHTML(t.project)+'</select>';
     ph+='<button class="moreact danger'+(isArm?' on':'')+'" onclick="delUnit(\''+id+'\',event)">'+(isArm?'tap again to delete':'✕ delete')+'</button>';
     ph+='</div>';
+    if(editing==='dayp:'+id) ph+=dayPickerHTML(id);
     if(isTask) ph+=subtaskRowsHTML(t);
     return ph;
   }
@@ -1675,6 +1680,8 @@ function unitMoreHTML(t,ctx){
     h+='<button class="moreact" onclick="itemToNow(\''+id+'\',event)">\u2192 now</button>';
   if(want.indexOf('day')<0&&!onDay)
     h+='<button class="moreact" onclick="itemToDay(\''+id+'\',event)">\u2192 '+vdayLabel().toLowerCase()+'</button>';
+  if(isTask)
+    h+='<button class="moreact'+(editing==='dayp:'+id?' on':'')+'" title="put it on a specific day" onclick="event.stopPropagation();toggleEdit(\'dayp:'+id+'\')">\u25a6 plan a day</button>';
   h+='<button class="moreact'+(editing==='sess:'+id?' on':'')+'" title="type in a time you forgot to track" onclick="event.stopPropagation();toggleEdit(\'sess:'+id+'\')">\u23f1 log time'+(avgSessionSecs(id)?' \u00b7 avg '+mmss(avgSessionSecs(id)):'')+'</button>';
   if(later) h+='<button class="moreact" onclick="taskDown(\''+id+'\',event)">\u2193 next block</button>';
   /* only offer to unpin from a specific block. "Unpin from today" sat next to "back to the bank"
@@ -2053,6 +2060,48 @@ function unassignTaskDay(id,ev){ if(ev)ev.stopPropagation();
 function assignTaskToBlock(id,blockId){
   const t=taskById(id); if(!t||t.day!==vday()) return; /* a task can only pin to a block on its own day */
   t.blockId=blockId; t.bucket='day'; save(); render(); toast('Pinned to block');
+}
+/* Pull an existing bank task straight into a block. assignTaskToBlock() alone can't do this: it
+   guards on the task already being on the block's day, which a bank task never is. This sets the
+   day and the block together, which is what "pull it in from the bank" actually means.
+   It exists because on a phone the only non-drag route into a block was the "now" button, and
+   that only ever targets the block running right now — there was no tap path into tomorrow's
+   2pm block. */
+function pullTaskIntoBlock(id,blockId,ev){
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  const t=taskById(id), b=blockOf(blockId);
+  if(!t||!b) return;
+  t.day=vday(); t.blockId=blockId; t.futureBucket=null; t.bucket='day';
+  save(); render(); toast('Pulled into '+(b.focus||'the block'));
+}
+/* A tap path to "put this on Thursday". Dragging a chip onto the week strip already worked, but
+   drag was the ONLY way to reach a specific weekday: the row buttons offer "now" and "the day
+   you're viewing" and nothing else, so on a phone a deliberate press-hold-drag was required for
+   something as ordinary as moving a task to Friday. */
+function dayPickerHTML(id){
+  const t=taskById(id); if(!t) return '';
+  const L=['S','M','T','W','T','F','S'];
+  let h='<div class="daypick" onclick="event.stopPropagation()">';
+  for(let i=0;i<7;i++){
+    const k=shiftKey(today(),i);
+    const p=k.split('-').map(Number), d=new Date(p[0],p[1]-1,p[2]);
+    const on=t.day===k;
+    h+='<button class="dpday'+(on?' on':'')+'" onclick="pickTaskDay(\''+id+'\',\''+k+'\',event)" title="'+k+'">'+
+       '<span class="dpl">'+(i===0?'TODAY':L[d.getDay()])+'</span>'+
+       '<span class="dpn">'+d.getDate()+'</span></button>';
+  }
+  h+='<button class="dpday dpclear" onclick="unassignTaskDay(\''+id+'\',event)" title="back to the bank">'+
+     '<span class="dpl">BANK</span><span class="dpn">\u232b</span></button>';
+  return h+'</div>';
+}
+function pickTaskDay(id,k,ev){
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  assignTaskToDay(id,k);
+  editing=null; render();
+}
+/* the unassigned bank, minus anything already placed — what's actually pullable right now */
+function pullableBankTasks(){
+  return S.tasks.filter(function(t){ return isBacklogTask(t)&&!t.day&&!itemDone(t); }).sort(byOrder);
 }
 function unassignTaskBlock(id,ev){ if(ev)ev.stopPropagation();
   const t=taskById(id); if(!t) return; t.blockId=null; save(); render(); }
@@ -3638,6 +3687,24 @@ function renderBlockDetailPanel(){
   sortSettledLast(quests.concat(btasks)).forEach(function(t){ h+=taskRowHTML(t,'block'); });
   ptasks.forEach(function(t){ h+=taskRowHTML(t,'block'); });
   h+='</div>';
+  /* tap-to-pull from the bank: no drag, works the same on a phone as on a desktop. Hidden for
+     routine blocks, where typing means "add a habit to this routine" rather than "schedule a
+     task", so pulling a one-off task in would be the wrong gesture. */
+  if(!b.routine){
+    const bank=pullableBankTasks();
+    if(bank.length){
+      /* every pullable task, in a scrolling strip — NOT a truncated top-N. Tasks are ordered by
+         `order`, which is Date.now() at creation, so a cap would hide the most recently added
+         ones: exactly the tasks you're most likely to be scheduling right now. */
+      h+='<div class="bdbanklbl">pull from the task bank · '+bank.length+'</div><div class="bdbank">';
+      bank.forEach(function(t){
+        h+='<button class="bankchip" onclick="pullTaskIntoBlock(\''+t.id+'\',\''+b.id+'\',event)">+ '+
+           String(t.text).replace(/</g,'&lt;')+
+           (t.estMin?'<span class="bcmin">'+t.estMin+'m</span>':'')+'</button>';
+      });
+      h+='</div>';
+    }
+  }
   h+='<div class="addtiny"><input id="tinyIn-'+b.id+'" placeholder="'+(b.routine?'add a habit to this routine, press enter…':'add a task to this block, press enter…')+'" maxlength="80" onkeydown="if(event.key===\'Enter\'){event.preventDefault();quickAddBlockTask(\''+b.id+'\')}">'+
      '<button class="btn tiny soft" onclick="quickAddBlockTask(\''+b.id+'\')">+</button></div>'+
      '<textarea class="bnotes" placeholder="notes…" onchange="setNotes(\''+b.id+'\',this.value)">'+(b.notes||'')+'</textarea>';
@@ -3909,6 +3976,7 @@ function taskRowHTML(t, ctx){
     (editing==='sched:'+t.id&&ctx!=='block'?schedEditorHTML(t.id):'')+
     (editing==='sess:'+t.id?sessEditorHTML(t.id):'')+
     (editing==='mode:'+t.id?modeEditorHTML(t.id):'')+
+    (editing==='dayp:'+t.id?dayPickerHTML(t.id):'')+
     '</div>';
 }
 function renderTaskChip(t){
@@ -3927,6 +3995,7 @@ function renderTaskChip(t){
     (editing==='sched:'+t.id?schedEditorHTML(t.id):'')+
     (editing==='sess:'+t.id?sessEditorHTML(t.id):'')+
     (editing==='mode:'+t.id?modeEditorHTML(t.id):'')+
+    (editing==='dayp:'+t.id?dayPickerHTML(t.id):'')+
     '</div>';
 }
 function renderTaskBank(){
@@ -4465,7 +4534,9 @@ function renderMonth(){
    for — so cards, tasks, quests, bank chips and the insertion drop-zones all become touch
    draggable at once, with no change to their handlers.
    It takes a short press (not an immediate drag) to start, so ordinary scrolling still works. */
-const TOUCH_HOLD_MS=280, TOUCH_SLOP=12;
+/* long enough that resting a finger before scrolling doesn't turn into a drag, short enough that
+   a deliberate press-and-move still feels immediate */
+const TOUCH_HOLD_MS=420, TOUCH_SLOP=10;
 const HAS_DT=(function(){ try{ return !!new DataTransfer(); }catch(e){ return false; } })();
 let tdrag=null, tdragTimer=null, pendingTouch=null;
 function makeDT(){
@@ -4527,6 +4598,11 @@ function onTouchDragStart(e){
   if(!el||!el.closest) return;
   /* a tap on a real control inside the row is a tap, not the start of a drag */
   if(el.closest('button,input,select,textarea,a,[contenteditable="true"]')) return;
+  /* Never arm a drag inside a bottom sheet. A sheet is a small scrolling surface, and once the
+     hold timer fires the move handler preventDefault()s every touchmove to keep the page still
+     under the drag — which reads as "the popup won't scroll". Nothing inside a sheet is a drag
+     source today, so there is nothing to lose by excluding it outright. */
+  if(el.closest('.pssheet')) return;
   const src=el.closest('[draggable="true"]');
   if(!src) return;
   pendingTouch={x:t.clientX, y:t.clientY, src:src};
