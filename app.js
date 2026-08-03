@@ -1781,7 +1781,7 @@ function unitCtlHTML(t,ctx){
       ph+='<button class="arrowbtn" title="file it in the future log" onclick="taskToFuture(\''+id+'\',event)">»</button>';
     ph+='<button class="morebtn'+(openMore?' on':'')+'" title="type, repeat, category" onclick="event.stopPropagation();toggleEdit(\'more:'+id+'\')">⋯</button>';
     ph+=reorderArrowsHTML(t);
-    ph+='<span class="drag" title="drag onto a day or the future log">⠿</span>';
+    ph+='<button class="drag'+(isPicked(id)?' picked':'')+'" title="tap to pick it up, then tap a day or a block" onclick="pickTask(\''+id+'\',event)">⠿</button>';
     return ph;
   }
   const running=!!t.timerStart, sk=itemSkipped(t,k);
@@ -1805,7 +1805,7 @@ function unitCtlHTML(t,ctx){
     h+='<button class="arrowbtn wide'+(sk?' on':'')+'" title="skip just this day \u2014 your streak stays safe" onclick="skipItem(\''+id+'\',event)">'+(sk?'unskip':'skip')+'</button>';
   h+='<button class="morebtn'+(open?' on':'')+'" title="more actions" onclick="event.stopPropagation();toggleEdit(\'more:'+id+'\')">\u22ef</button>';
   h+=reorderArrowsHTML(t);
-  h+='<span class="drag" title="drag onto a block, a day, or the future log">\u283f</span>';
+  h+='<button class="drag'+(isPicked(id)?' picked':'')+'" title="tap to pick it up, then tap a day or a block" onclick="pickTask(\''+id+'\',event)">\u283f</button>';
   return h;
 }
 /* the drawer behind the "more" button — labelled words, not a wall of glyphs */
@@ -2307,6 +2307,223 @@ function onQuestDockTaskDrop(ev){
    where day/blockId drift apart — should never bleed into a different day's timeline just
    because a block id happens to match. Belt-and-suspenders alongside the day-scoped auto ids. */
 function blockTasksFor(b,k){ k=k||vday(); return S.tasks.filter(function(t){return t.blockId===b.id&&t.day===k;}); }
+/* ===================== add a block from the + button =====================
+   The timeline is a static picture of the day: it never creates anything by being dragged or
+   long-pressed on, because both gestures collide with scrolling a tall grid on a phone. Blocks
+   come from this button (and from the + on a collapsed open stretch, which is the same call with
+   the gap's own start time already filled in).
+   The default start is the next clean half-hour that isn't already inside a real block, so the
+   common case is one tap and done. */
+function nextFreeStart(){
+  const d=day(vday());
+  const real=(d.blocks||[]).filter(function(b){ return !isUnassignedBlock(b); });
+  let m=isViewingToday()?Math.ceil((nowMinutes()%1440)/30)*30:9*60;
+  if(m<DAY_START) m=DAY_START;
+  for(let guard=0; guard<48 && m<DAY_END; guard++){
+    const clash=real.some(function(b){ return m>=toMin(b.start)&&m<toMin(b.end||fromMin(toMin(b.start)+60)); });
+    if(!clash) return fromMin(m);
+    m+=30;
+  }
+  return fromMin(Math.min(m,DAY_END-60));
+}
+/* the strip above the day doubles as the placement prompt, so a picked task always says where it
+   can go and how to let go of it */
+function renderDayRailHint(){
+  const el=document.getElementById('dayRailHint');
+  if(!el) return;
+  const t=pickedTask();
+  el.innerHTML=t?('<span class="picking">PLACING: '+String(t.text).replace(/</g,'&lt;')+
+    '</span> <button class="pickcancel" onclick="clearPick()">cancel</button>'):'';
+}
+function addBlockPrompt(){
+  createBlockAt(nextFreeStart(),60);
+}
+/* ===================== week grid =====================
+   Seven day columns against one shared time axis. It reads S.days[k].blocks directly — no new
+   state, no cache — so a block edited here and a block edited on the day timeline are the same
+   record. Tapping empty space creates a block at that time on that day; tapping a block opens it
+   on its own day. */
+let weekGridOpen=false;
+function openWeekGrid(){ weekGridOpen=true; render(); }
+function closeWeekGrid(){ weekGridOpen=false; render(); }
+function weekGridDays(){
+  /* the Sunday-based week containing the day you're looking at, matching the header strip */
+  const p=vday().split('-').map(Number), dt=new Date(p[0],p[1]-1,p[2]);
+  const start=new Date(dt); start.setDate(dt.getDate()-dt.getDay());
+  const out=[];
+  for(let i=0;i<7;i++){
+    const d2=new Date(start); d2.setDate(start.getDate()+i);
+    out.push(d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0')+'-'+String(d2.getDate()).padStart(2,'0'));
+  }
+  return out;
+}
+const WG_PX_PER_MIN=0.62;
+function wgTop(min){ return Math.round((min-DAY_START)*WG_PX_PER_MIN); }
+function createBlockOnDay(dayKey,startTime){
+  const d=day(dayKey);
+  const id='b'+Date.now();
+  d.blocks.push({id:id, start:startTime, end:fromMin(toMin(startTime)+60), focus:'', notes:'', type:'open', category:null});
+  d.blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
+  save();
+  /* jump to that day with the new block open, which is what you wanted if you tapped empty space */
+  weekGridOpen=false; setViewDay(dayKey); panelOverride=id; render();
+}
+function wgEmptyTap(dayKey,ev){
+  const host=ev.currentTarget;
+  const r=host.getBoundingClientRect();
+  const y=(ev.clientY!==undefined?ev.clientY:0)-r.top;
+  let m=DAY_START+Math.round((y/WG_PX_PER_MIN)/30)*30;
+  m=Math.max(DAY_START,Math.min(DAY_END-30,m));
+  if(pickedTaskId){ toast('Pick a block, not empty space'); return; }
+  createBlockOnDay(dayKey,fromMin(m));
+}
+function wgOpenBlock(dayKey,blockId,ev){
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  if(pickedTaskId){
+    /* placing needs the task and the block on the same day, so switch first, then place */
+    setViewDay(dayKey);
+    placePickedInBlock(blockId);
+    weekGridOpen=false; render();
+    return;
+  }
+  weekGridOpen=false; setViewDay(dayKey); panelOverride=blockId; render();
+}
+function renderWeekGrid(){
+  const host=document.getElementById('weekGrid');
+  if(!host) return;
+  if(!weekGridOpen){ host.style.display='none'; host.innerHTML=''; return; }
+  host.style.display='flex';
+  const days=weekGridDays(), tk=today();
+  const L=['S','M','T','W','T','F','S'];
+  const height=wgTop(DAY_END);
+  let axis='';
+  for(let m=DAY_START;m<=DAY_END;m+=120) axis+='<span class="wgh" style="top:'+wgTop(m)+'px">'+fromMin(m).slice(0,2)+'</span>';
+  let cols='';
+  days.forEach(function(k,i){
+    const p=k.split('-').map(Number), dt=new Date(p[0],p[1]-1,p[2]);
+    const dd=S.days[k];
+    let boxes='';
+    ((dd&&dd.blocks)||[]).filter(function(b){ return !isUnassignedBlock(b); }).forEach(function(b){
+      const st=Math.max(DAY_START,toMin(b.start));
+      const en=Math.min(DAY_END,toMin(b.end||fromMin(toMin(b.start)+60)));
+      const col=blockColor(b);
+      const label=String(b.focus||b.calTitle||'').replace(/</g,'&lt;');
+      boxes+='<div class="wgblk'+(pickedTaskId?' armed':'')+'" style="top:'+wgTop(st)+'px;height:'+Math.max(14,wgTop(en)-wgTop(st))+'px;'+
+        'background:'+col.bg+';border-color:'+col.edge+'" onclick="wgOpenBlock(\''+k+'\',\''+b.id+'\',event)" '+
+        'title="'+b.start+'–'+(b.end||'')+' '+label+'">'+
+        '<span class="wgt">'+label+'</span></div>';
+    });
+    cols+='<div class="wgcol'+(k===tk?' today':'')+(k===vday()?' sel':'')+'">'+
+      '<div class="wgcolhead"><span class="wgl">'+L[dt.getDay()]+'</span><span class="wgn">'+dt.getDate()+'</span>'+
+      '<span class="wgs">'+Math.round(dayScore(k)*100)+'</span></div>'+
+      '<div class="wgbody" style="height:'+height+'px" onclick="wgEmptyTap(\''+k+'\',event)">'+boxes+'</div>'+
+      '</div>';
+  });
+  host.innerHTML=
+    '<div class="wghead"><div><div class="wgttl">WEEK GRID</div>'+
+      '<div class="wgrange">'+days[0].slice(5)+' – '+days[6].slice(5)+'</div></div>'+
+      '<div class="wgnav"><button onclick="shiftViewDay(-7)">←</button>'+
+      '<button onclick="shiftViewDay(7)">→</button>'+
+      '<button onclick="closeWeekGrid()">✕</button></div></div>'+
+    '<div class="wgscroll"><div class="wggrid">'+
+      '<div class="wgaxis" style="height:'+height+'px">'+axis+'</div>'+cols+
+    '</div>'+
+    '<div class="wgfoot">'+(pickedTaskId?'tap a block to place the picked task':'tap empty space to add a block · tap a block to open it')+'</div>'+
+    '</div>';
+}
+/* ===================== planning: the sticky week banner =====================
+   Seven days pinned above the task bank. With nothing picked, tapping a day opens that day's list
+   of tasks; with a task picked, the days light up and tapping one plans it there. Sticky because
+   the whole point is to still be able to reach a day after scrolling down the bank to find the
+   task you wanted to plan. */
+let openPlanDay=null;
+function togglePlanDayList(k){ openPlanDay=(openPlanDay===k)?null:k; render(); }
+function planBannerTap(k,ev){
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  /* set the target day BEFORE placing: placePickedOnDay() renders, and assigning after it would
+     leave the list closed until something else happened to trigger another render */
+  if(pickedTaskId){ openPlanDay=k; placePickedOnDay(k); return; }
+  togglePlanDayList(k);
+}
+function renderPlanBanner(){
+  const host=document.getElementById('planBanner');
+  if(!host) return;
+  const L=['S','M','T','W','T','F','S'], tk=today();
+  const picked=pickedTask();
+  let cells='';
+  for(let i=0;i<7;i++){
+    const k=shiftKey(tk,i);
+    const p=k.split('-').map(Number), dt=new Date(p[0],p[1]-1,p[2]);
+    const n=S.tasks.filter(function(t){return t.day===k&&!itemDone(t);}).length;
+    cells+='<button class="pbday'+(picked?' armed':'')+(k===tk?' today':'')+(openPlanDay===k?' open':'')+'" '+
+      'onclick="planBannerTap(\''+k+'\',event)" title="'+k+'">'+
+      '<span class="pbl">'+(i===0?'TODAY':L[dt.getDay()])+'</span>'+
+      '<span class="pbn">'+dt.getDate()+'</span>'+
+      '<span class="pbc">'+(n||'')+'</span></button>';
+  }
+  let list='';
+  if(openPlanDay){
+    const items=S.tasks.filter(function(t){return t.day===openPlanDay;}).sort(byOrder);
+    list='<div class="pblist"><div class="pblisthead">'+
+      '<span>'+openPlanDay+' · '+items.length+' task'+(items.length===1?'':'s')+'</span>'+
+      '<button onclick="openDay(\''+openPlanDay+'\')">open day</button>'+
+      '<button onclick="togglePlanDayList(\''+openPlanDay+'\')">✕</button></div>'+
+      (items.length?items.map(function(t){return taskRowHTML(t,'plan');}).join('')
+        :'<div class="qempty">nothing planned for this day yet</div>')+
+      '</div>';
+  }
+  host.innerHTML='<div class="pbhint">'+(picked?('PLACING: '+String(picked.text).replace(/</g,'&lt;')+' — tap a day')
+    :'tap a task, then a day · tap a day to see its list')+'</div>'+
+    '<div class="pbdays">'+cells+'</div>'+list;
+}
+/* ===================== tap to place =====================
+   One picked task at a time, then tap where it goes. Drag still works everywhere it did, but a
+   drag needs a press-and-hold on a phone and cannot cross a scroll boundary, so every placement
+   target now also answers a plain tap: blocks on the day timeline, days in the planning banner,
+   columns in the week grid.
+   The pick lives in a module variable rather than in S — it is interaction state, not user data,
+   and it should not survive a reload or sync to another device. */
+let pickedTaskId=null;
+function pickedTask(){ return pickedTaskId?(taskById(pickedTaskId)||unitById(pickedTaskId)):null; }
+function isPicked(id){ return pickedTaskId===id; }
+/* A click that landed on a real control inside the row is that control's click, not a pick.
+   `.ring` and `.hsdot` are in the list because they are clickable DIVs, not buttons — the tick
+   circle on a bank chip is a div with its own onclick, so without naming it here ticking a task
+   off would also pick it up, and you'd tick something and silently arm a placement. */
+const PICK_IGNORE='button,input,select,textarea,a,[contenteditable="true"],.ring,.hsdot,.subrow';
+function fromControl(ev){
+  const el=ev&&(ev.target||ev.srcElement);
+  return !!(el&&el.closest&&el.closest(PICK_IGNORE));
+}
+function pickTask(id,ev){
+  /* the handle IS a button, so it has to be allowed to call this even though the guard below
+     rejects clicks that came from buttons — it opts in explicitly by passing no event */
+  const viaHandle=ev&&ev.target&&ev.target.closest&&ev.target.closest('.drag');
+  if(!viaHandle&&fromControl(ev)) return;
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  pickedTaskId=(pickedTaskId===id)?null:id;
+  render();
+}
+function clearPick(){ if(pickedTaskId){ pickedTaskId=null; render(); } }
+/* placing into a block from a pick has to work from anywhere — the task may be in the bank with
+   no day at all, on another day, or already in a different block on this one */
+function placePickedInBlock(blockId,ev){
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  const t=pickedTask(); if(!t) return false;
+  const b=blockOf(blockId); if(!b) return false;
+  if(t.kind==='ritual'||t.kind==='quest'){ assignItemTo(t.id,blockId); }
+  else { t.day=vday(); t.blockId=blockId; t.futureBucket=null; t.bucket='day'; }
+  pickedTaskId=null; save(); render();
+  toast('Placed in '+(b.focus||b.calTitle||'the block'));
+  return true;
+}
+function placePickedOnDay(dayKey,ev){
+  if(ev&&ev.stopPropagation) ev.stopPropagation();
+  const t=pickedTask(); if(!t) return false;
+  assignTaskToDay(t.id,dayKey);
+  pickedTaskId=null; render();
+  return true;
+}
 /* ===================== within-list reordering (arrows + drag) =====================
    order is only ever compared against siblings in the exact same place — the task bank, one
    block's task list, the inbox, a side-quest category — so a swap or a drop only ever touches the
@@ -3846,9 +4063,10 @@ function blockGridBoxHTML(b,openId){
      edge, and a scroll swipe on a phone routinely starts with a finger right on one, silently
      turning "I'm scrolling" into "I'm resizing this block." Touch users still get to change a
      block's time via the start/end inputs in its detail panel. */
-  return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
+  return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+(pickedTaskId?' armed':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
     'ondragover="event.preventDefault();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onBlockDrop(event,\''+b.id+'\')" '+
-    'onclick="toggleBlock(\''+b.id+'\')" title="'+(empty?'click to add a focus':'click for details')+'">'+
+    'onclick="'+(pickedTaskId?'placePickedInBlock(\''+b.id+'\',event)':'toggleBlock(\''+b.id+'\')')+'" '+
+    'title="'+(pickedTaskId?'tap to put the picked task here':(empty?'click to add a focus':'click for details'))+'">'+
     (canResize?'<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')"></div>':'')+
     '<span class="gtime">'+b.start+'–'+(b.end||'')+'</span>'+
     (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon" title="'+BLOCK_TYPE_LABEL[b.type]+' block">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
@@ -4170,7 +4388,7 @@ function renderDock(){
 function taskRowHTML(t, ctx){
   ctx = ctx || 'block';
   const dn=itemDone(t), worst=isWorstHabit(t.id), sk=itemSkipped(t);
-  return '<div class="taskrow2'+(dn?' done':'')+(worst?' worst':'')+(sk?' skipped':'')+'" draggable="true" ondragstart="onTaskDragStart(event,\''+t.id+'\')" '+
+  return '<div class="taskrow2'+(dn?' done':'')+(worst?' worst':'')+(sk?' skipped':'')+(isPicked(t.id)?' picked':'')+'" draggable="true" onclick="pickTask(\''+t.id+'\',event)" ondragstart="onTaskDragStart(event,\''+t.id+'\')" '+
     'ondragover="event.preventDefault();event.stopPropagation();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onTaskRowDrop(event,\''+t.id+'\')">'+
     '<div class="tr2-title">'+
     '<input type="checkbox"'+(dn?' checked':'')+' onchange="toggleUnit(\''+t.id+'\')">'+
@@ -4191,7 +4409,7 @@ function taskRowHTML(t, ctx){
 function renderTaskChip(t){
   const prioColor=t.priority==='High'?'var(--pink-deep)':t.priority==='Medium'?'var(--sun-deep)':t.priority==='Low'?'var(--lav-deep)':'';
   const dn=itemDone(t);
-  return '<div class="tbchip'+(dn?' done':'')+'" draggable="true" ondragstart="onTaskDragStart(event,\''+t.id+'\')" '+
+  return '<div class="tbchip'+(dn?' done':'')+(isPicked(t.id)?' picked':'')+'" draggable="true" onclick="pickTask(\''+t.id+'\',event)" ondragstart="onTaskDragStart(event,\''+t.id+'\')" '+
     'ondragover="event.preventDefault();event.stopPropagation();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onTaskRowDrop(event,\''+t.id+'\')">'+
     '<div class="tbchip-title">'+
     '<div class="ring" onclick="toggleUnit(\''+t.id+'\')" style="'+(dn?'background:var(--lav-deep);border-color:var(--lav-deep);color:var(--bgpage)':'')+'">\u2713</div>'+
@@ -4334,6 +4552,8 @@ function render(){
   document.getElementById('dayFill').style.width=overall+'%';
   renderPrismShell();
   renderPrismFocus();
+  renderWeekGrid();
+  renderDayRailHint();
   renderFocusSession();
   /* water lives in the app header now (waterHeader/waterFillHeader/cupCaptionHeader), so it has
      to render on every view, not just today — this block runs before the view branches below,
@@ -4351,7 +4571,7 @@ function render(){
   renderRitualQuickRow();
   if(viewMode==='notes'){ renderNotes(); return; }
   if(viewMode==='month'){ renderMonth(); return; }
-  if(viewMode==='planning'){ renderTaskBank(); renderFutureLog(); renderPlan(); return; }
+  if(viewMode==='planning'){ renderPlanBanner(); renderTaskBank(); renderFutureLog(); renderPlan(); return; }
   /* everything below here used to be gated to the today view only, back when every one of these
      cards lived there. Now most of them (water detail, habit streaks, meditation, books,
      movement, spend, papers, today's-tasks) live in the more tab instead — but their

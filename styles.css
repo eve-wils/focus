@@ -1000,3 +1000,75 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
   font-family:var(--serif);font-size:11.5px;cursor:pointer;text-align:left;max-width:100%}
 .bankchip:hover{background:var(--mint)}
 .bankchip .bcmin{font-size:9px;letter-spacing:1px;color:var(--ink-3);flex:none}
+
+/* ===================== day rail, tap-to-place, plan banner, week grid ===================== */
+.dayrail{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+.weekbtn{flex:none;min-height:34px;padding:6px 12px;background:transparent;border:1px solid var(--stroke);
+  color:var(--ink-2);font-family:var(--serif);font-size:10.5px;letter-spacing:1.8px;cursor:pointer}
+.weekbtn:hover{border-color:var(--mint-deep);color:var(--mint-deep)}
+.addblkbtn{flex:none;min-height:34px;padding:6px 12px;background:transparent;border:1px dashed var(--mint-deep);
+  color:var(--mint-deep);font-family:var(--serif);font-size:10.5px;letter-spacing:1.6px;cursor:pointer}
+.dayrailhint{flex:1;min-width:0;font-size:10px;letter-spacing:.8px;color:var(--ink-3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dayrailhint .picking{color:var(--mint-deep)}
+.pickcancel{background:none;border:none;color:var(--ink-3);font-family:var(--serif);
+  font-size:10px;text-decoration:underline;cursor:pointer;min-height:34px}
+/* the picked task, and anything that will accept it */
+.taskrow2.picked,.tbchip.picked{outline:1px solid var(--mint-deep);background:var(--mint)}
+.gridblock.armed{border-style:dashed;cursor:copy}
+.gridblock.armed:hover{border-color:var(--mint-deep);background:var(--mint)}
+/* planning banner */
+.planbanner{position:sticky;top:0;z-index:30;background:var(--bgpage);
+  padding:8px 0 10px;border-bottom:1px dashed var(--stroke);margin-bottom:10px}
+.pbhint{font-size:9.5px;letter-spacing:1.3px;color:var(--ink-3);margin-bottom:7px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.pbday{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  min-height:52px;background:var(--glass);border:1px solid var(--stroke);cursor:pointer;
+  font-family:var(--serif);color:var(--ink-2);padding:5px 2px}
+.pbday .pbl{font-size:8px;letter-spacing:1px;color:var(--ink-3)}
+.pbday .pbn{font-size:13px;font-weight:600}
+.pbday .pbc{font-size:8.5px;color:var(--ink-3);min-height:11px}
+.pbday.today{border-color:var(--mint-deep)}
+.pbday.today .pbn{color:var(--mint-deep)}
+.pbday.armed{border-style:dashed;border-color:var(--mint-deep);background:var(--mint)}
+.pbday.open{background:var(--mint-deep);color:var(--bgpage)}
+.pbday.open .pbl,.pbday.open .pbc{color:var(--bgpage)}
+.pblist{margin-top:10px;border:1px solid var(--stroke);background:var(--glass);padding:10px}
+.pblisthead{display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:1.2px;
+  color:var(--ink-3);margin-bottom:8px}
+.pblisthead span{flex:1}
+.pblisthead button{background:none;border:1px solid var(--stroke);color:var(--ink-2);
+  font-family:var(--serif);font-size:10px;padding:5px 9px;min-height:34px;cursor:pointer}
+/* week grid overlay */
+.weekgrid{position:fixed;inset:0;z-index:250;background:var(--bgpage);flex-direction:column}
+.wghead{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 10px;
+  border-bottom:1px dashed var(--stroke);flex:none}
+.wgttl{font-size:9.5px;letter-spacing:2.4px;color:var(--ink-3)}
+.wgrange{font-size:15px;font-weight:600;color:var(--mint-deep);margin-top:3px}
+.wgnav{display:flex;gap:2px}
+.wgnav button{background:none;border:none;color:var(--ink-2);font-family:var(--serif);
+  font-size:15px;min-height:44px;min-width:40px;cursor:pointer}
+.wgscroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 10px 20px}
+.wggrid{display:grid;grid-template-columns:22px repeat(7,1fr);gap:2px}
+.wgaxis{position:relative}
+.wgh{position:absolute;right:2px;font-size:8.5px;color:var(--ink-3)}
+.wgcol{display:flex;flex-direction:column;min-width:0}
+.wgcolhead{display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 0 6px;position:sticky;top:0;background:var(--bgpage);z-index:2}
+.wgcolhead .wgl{font-size:9px;letter-spacing:1px;color:var(--ink-3)}
+.wgcolhead .wgn{font-size:12px;font-weight:600;color:var(--ink-2)}
+.wgcolhead .wgs{font-size:8px;color:var(--ink-3)}
+.wgcol.today .wgn{color:var(--mint-deep)}
+.wgcol.sel .wgcolhead{border-bottom:1px solid var(--mint-deep)}
+.wgbody{position:relative;background:var(--glass);border:1px solid var(--rule);cursor:copy}
+.wgblk{position:absolute;left:1px;right:1px;border:1px solid;overflow:hidden;padding:2px 3px;cursor:pointer}
+.wgblk.armed{border-style:dashed}
+.wgt{display:block;font-size:8px;line-height:1.15;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wgfoot{text-align:center;font-size:9px;letter-spacing:1.3px;color:var(--ink-3);margin-top:12px}
+
+/* the ⠿ handle is the dependable "pick this up" target: a bank chip is dense with controls (its
+   name is contenteditable), so there is very little neutral row left to tap */
+.drag{min-height:36px;min-width:30px;background:none;border:none;color:var(--ink-3);
+  font-family:var(--serif);cursor:pointer;padding:0 4px}
+.drag.picked{color:var(--mint-deep)}
