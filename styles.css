@@ -1125,3 +1125,7 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 .subbtn{background:none;border:1px solid var(--stroke);color:var(--ink-3);font-family:var(--serif);
   font-size:9.5px;letter-spacing:.6px;padding:4px 7px;min-height:32px;cursor:pointer}
 .subbtn.on,.subbtn:hover{border-color:var(--mint-deep);color:var(--mint-deep)}
+
+/* the repeat marker on a timeline block, and the focus label now that the clock is gone */
+.repeattag{flex:none;font-size:9px;color:var(--ink-3);opacity:.8}
+.gridblock .gfocus{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
