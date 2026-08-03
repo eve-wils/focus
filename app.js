@@ -713,7 +713,15 @@ function flushSave(){
 const GH_OWNER='eve-wils', GH_REPO='focus_data', GH_BRANCH='main', GH_PATH='state.json';
 const GH_TOKEN_KEY='aura_gh_token';
 const GH_PRECONNECT_BACKUP_KEY='aura_gh_preconnect_backup';
-const GH_PUSH_DEBOUNCE_MS=2000;
+/* One commit per edit-burst, and this is how wide a burst is. At 2s it was effectively one commit
+   per action: a single day of real use produced 324 of them, which buries anything worth reading
+   in `git log` and made the CI guard expensive enough to need moving off per-push. 30s collapses
+   a working stretch into a handful of commits instead.
+   The cost is a wider window where an edit exists only in this tab: closing it inside that window
+   is what the beforeunload prompt is for, and it will now show up more often. That is the right
+   side to err on - flushGhPushUrgent() still fires the pending push on pagehide, so the warning
+   is a backstop for a hard close rather than the only thing standing between an edit and GitHub. */
+const GH_PUSH_DEBOUNCE_MS=30000;
 let ghToken=localStorage.getItem(GH_TOKEN_KEY)||'';
 let ghSha=null, ghSyncing=false, ghLastSyncAt=null, ghLastError=null, ghBranchReady=false;
 let ghSaveTimer=null, ghPushInFlight=false, ghPushQueued=false;
