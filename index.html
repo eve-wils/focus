@@ -61,6 +61,7 @@
       </div>
     <div class="ritualquickrow" id="ritualQuickRow"></div>
     <div class="viewtabs">
+    <button class="vtab" id="vtab-focus" onclick="setView('focus')">focus</button>
     <button class="vtab on" id="vtab-today" onclick="setView('today')">day</button>
     <button class="vtab" id="vtab-planning" onclick="setView('planning')">week</button>
     <button class="vtab" id="vtab-month" onclick="setView('month')">month</button>
@@ -80,6 +81,8 @@
     </div>
   </div>
   <div id="offTodayBar" style="display:none"></div>
+  <!-- FOCUS VIEW - the laptop's landing screen. Always about now, whatever day the rail shows. -->
+  <div id="focusView" class="focusview"></div>
   <!-- TODAY VIEW -->
   <div id="todayView">
   <!-- desktop only: the current block, above the timeline/inbox split -->

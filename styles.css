@@ -1161,7 +1161,11 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 .deskfocus{display:none}
 .deskday{display:none}
 
-@media (min-width:901px){
+/* The rail starts where the phone shell stops. It used to start at 901px, which left 761-900px
+   falling through to the old hero layout - a browser window at anything less than full width, or
+   any zoom level, landed in that gap and saw none of this. There must be no width that matches
+   neither shell. */
+@media (min-width:761px){
   body{padding-left:var(--deskrail)}
   .hero{display:none}
   .wrap{max-width:1500px;padding:0 26px}
@@ -1351,3 +1355,114 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
    whole page sideways. Let the timeline scroll within its own column instead of widening the
    document - a horizontally scrolling page makes every vertical swipe feel broken. */
 @media (max-width:900px){ .timeline{overflow-x:auto;max-width:100%} }
+
+/* between the phone shell and a roomy desktop: keep the rail but give it less width, and stack
+   the day panes rather than squeezing a timeline and an inbox into half a small window each */
+@media (min-width:761px) and (max-width:1100px){
+  :root{ --deskrail:180px; }
+  .wrap{padding:0 16px}
+  .deskday.on{grid-template-columns:minmax(0,1fr)}
+  .deskday .timeline{max-height:62vh}
+  .deskday #todayTasksCard{max-height:none}
+  .dsdd{font-size:27px}
+  .dsring .rw,.dsring .rw>svg{width:34px;height:34px}
+  .deskpanel{width:340px}
+  .dfcard{flex-wrap:wrap}
+  .dfbtns{flex-direction:row;width:100%}
+  .dfgo,.dfalt{flex:1;min-width:0}
+}
+
+/* ===================== focus screen =====================
+   The laptop's landing view: one block, one task, a few numbers, and the ways out. Sized so the
+   hero and the tracker row land above the fold on a 13" laptop without the page scrolling. */
+.focusview{display:none}
+@media (min-width:761px){
+  .focusview{display:block;padding:22px 0 30px;max-width:960px}
+  .fhhero{border:1px solid var(--mint-deep);border-radius:18px;padding:20px 22px;
+    background:linear-gradient(180deg,var(--mint),transparent)}
+  .fhhero.locked{border-color:var(--pink-deep);background:linear-gradient(180deg,var(--pink),transparent)}
+  .fhhero.idle{border-style:dashed;border-color:var(--stroke);background:var(--glass)}
+  .fhtoprow{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .fhring{position:relative;width:82px;height:82px;flex:none}
+  .fhring>svg{width:82px;height:82px;transform:rotate(-90deg)}
+  .fhmin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .fhmin b{font-size:24px;font-weight:700;color:var(--mint-deep);line-height:1}
+  .fhmin i{font-size:7.5px;font-style:normal;letter-spacing:.9px;color:var(--ink-3)}
+  .fhwhat{flex:1;min-width:180px}
+  .fhk{font-size:9px;letter-spacing:2.6px;text-transform:uppercase;color:var(--pink-deep)}
+  .fhblock{font-size:26px;font-weight:600;color:var(--ink);line-height:1.15;margin-top:3px}
+  .fhmeta{font-size:11px;color:var(--ink-3);margin-top:4px;font-variant-numeric:tabular-nums}
+  .fhbtns{display:flex;flex-direction:column;gap:7px;flex:none}
+  .fhgo{padding:12px 20px;background:var(--mint-deep);color:var(--bgpage);border:none;border-radius:11px;
+    font-size:13px;font-weight:700;letter-spacing:1.2px;cursor:pointer}
+  .fhgo.on{background:var(--pink-deep)}
+  .fhalt{padding:9px 16px;background:none;border:1px solid var(--stroke);border-radius:10px;
+    color:var(--ink-2);font-size:11px;cursor:pointer;white-space:nowrap}
+  .fhalt:hover{border-color:var(--mint-deep);color:var(--ink)}
+
+  /* the one thing to do, deliberately the largest text under the block name */
+  .fhtask{margin-top:18px;padding-top:15px;border-top:1px dashed var(--stroke)}
+  .fhtk{font-size:8.5px;letter-spacing:2.2px;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+  .fhtrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .fhbox{width:22px;height:22px;flex:none;border:2px solid var(--mint-deep);border-radius:7px;
+    background:none;cursor:pointer}
+  .fhbox:hover{background:var(--mint)}
+  .fhtx{flex:1;min-width:0;font-size:18px;font-weight:600;color:var(--ink);line-height:1.3;word-break:break-word}
+  .fhtx.dim{font-size:13px;font-weight:400;color:var(--ink-3)}
+  .fhel{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .fhplay{padding:9px 15px;border-radius:10px;border:1px solid var(--mint-deep);background:none;
+    color:var(--mint-deep);font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .fhplay.on{background:var(--mint-deep);color:var(--bgpage)}
+  .fhsubs{margin:9px 0 0 34px;border-left:1px solid var(--rule);padding-left:11px;
+    display:flex;flex-direction:column;gap:3px}
+  .fhsub{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3)}
+  .fhsub.done{text-decoration:line-through}
+  .fhrest{margin-top:15px;padding-top:13px;border-top:1px dashed var(--stroke)}
+
+  /* money · water · health · next up */
+  .fhtrackers{display:grid;grid-template-columns:repeat(3,auto) minmax(0,1fr);gap:12px;
+    align-items:center;margin-top:16px;border:1px solid var(--stroke);border-radius:14px;
+    background:var(--glass);padding:13px 16px}
+  .fhring2{display:none}
+  .fhtrackers .fhring{width:auto;height:auto}
+  .fhtrackers button.fhring{position:static}
+  .fhtrackers .rw{position:relative;width:46px;height:46px;display:block;margin:0 auto}
+  .fhtrackers .rw>svg{width:46px;height:46px;transform:rotate(-90deg)}
+  .fhtrackers .gl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px}
+  .fhtrackers .lb{display:block;font-size:8.5px;letter-spacing:1.4px;text-transform:uppercase;
+    color:var(--ink-3);margin-top:5px;text-align:center}
+  .fhtrackers .vl{display:block;font-size:11px;color:var(--ink-2);text-align:center;margin-top:1px}
+  button.fhring{background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:10px}
+  button.fhring:hover{background:var(--glass-strong)}
+  .fhnext{border-left:1px solid var(--stroke);padding-left:16px;min-width:0;cursor:pointer}
+  .fhnext.empty{cursor:default}
+  .fhnext .lb{font-size:8.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--ink-3);
+    display:block;text-align:left}
+  .fhnext .tt{display:block;font-size:14px;color:var(--ink);margin-top:3px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fhnext .tm{display:block;font-size:10.5px;color:var(--ink-3);margin-top:2px;font-variant-numeric:tabular-nums}
+  .fhnext:not(.empty):hover .tt{color:var(--mint-deep)}
+
+  .fhnav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+  .fhnav button{display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;
+    background:var(--glass);border:1px solid var(--stroke);border-radius:12px;padding:12px 14px;cursor:pointer}
+  .fhnav button:hover{border-color:var(--mint-deep)}
+  .fhnav b{font-size:13px;color:var(--ink);font-weight:600}
+  .fhnav span{font-size:9.5px;color:var(--ink-3);letter-spacing:.3px}
+}
+@media (min-width:761px) and (max-width:1100px){
+  .fhblock{font-size:21px}
+  .fhtrackers{grid-template-columns:repeat(3,auto);row-gap:12px}
+  .fhnext{grid-column:1 / -1;border-left:none;border-top:1px solid var(--stroke);padding:11px 0 0}
+  .fhnav{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* view switcher in the rail (replaces the .viewtabs strip that lived in the hidden hero) */
+@media (min-width:761px){
+  .dsnav2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;
+    border-top:1px dashed var(--stroke);border-bottom:1px dashed var(--stroke);padding:9px 0}
+  .dsnav2 button{background:none;border:1px solid transparent;border-radius:8px;color:var(--ink-3);
+    font-size:10px;padding:6px 2px;cursor:pointer;letter-spacing:.4px}
+  .dsnav2 button:hover{color:var(--ink);background:var(--glass)}
+  .dsnav2 button.on{color:var(--bgpage);background:var(--mint-deep);font-weight:700}
+}

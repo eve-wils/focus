@@ -4131,8 +4131,12 @@ function celebrateBurst(big){
   }
 }
 /* ===================== view mode ===================== */
-let viewMode='today';
-const VIEWS=['today','planning','notes','month','more'];
+/* The laptop opens on the focus screen: what you are meant to be doing right now, and the one
+   task at the top of it. Everything else - the timeline, the inbox, the week - is a click away
+   from there. The phone keeps opening on its own day view, which is already built around the
+   same idea and has no room for a second landing layer. */
+let viewMode=(typeof window!=='undefined'&&window.innerWidth>760)?'focus':'today';
+const VIEWS=['focus','today','planning','notes','month','more'];
 function setView(v){ viewMode=v; window.scrollTo(0,0); render(); }
 /* ===================== panel/block expand rules ===================== */
 function panelExpanded(r){
@@ -4301,6 +4305,118 @@ function renderDeskFocus(){
       '</div>'+
     '</div>';
 }
+/* ===================== the focus screen =====================
+   The laptop's landing view. One question answered above everything else - what am I meant to be
+   doing right now, and what is the single next thing inside it - with the handful of numbers that
+   are worth a glance underneath, and a way out to the timeline, the inbox and the week.
+   It is always about *now*, whatever day the rail is pointed at: a focus screen for last Tuesday
+   is a contradiction. Changing days from the rail moves you to the day view instead (goDay). */
+function goDay(k){ setViewDay(k); setView('today'); }
+function nextBlockToday(){
+  const k=today(), d=S.days[k]; if(!d||!d.blocks) return null;
+  const nm=nowMinutes()%1440;
+  return d.blocks.filter(function(b){ return !isEmptyBlock(b)&&toMin(b.start)>nm; })
+    .sort(function(a,b){ return toMin(a.start)-toMin(b.start); })[0]||null;
+}
+/* the one task the focus screen leads with: the first thing in the block that isn't done yet.
+   Falls back to nothing rather than to a finished task - "next up: something you already did"
+   is worse than an empty state. */
+function topTaskOf(b,k){
+  return blockAllTasks(b,k).filter(function(t){ return !itemDone(t,k); })[0]||null;
+}
+function focusTrackerRowHTML(){
+  const wanted={water:1,food:1,money:1};
+  let out='';
+  trackerRings().filter(function(r){ return wanted[r.kind]; }).forEach(function(r){
+    const label=r.kind==='food'?'health':r.kind;
+    out+='<button class="fhring" onclick="openSheet(\''+r.kind+'\')">'+
+      '<span class="rw">'+ringSvg(r.pct,r.color,43,8)+
+      '<span class="gl" style="color:'+r.color+'">'+r.glyph+'</span></span>'+
+      '<span class="lb">'+label+'</span><span class="vl">'+r.value+'</span></button>';
+  });
+  const nb=nextBlockToday();
+  out+='<div class="fhnext'+(nb?'':' empty')+'"'+(nb?' onclick="goBlock(\''+nb.id+'\')"':'')+'>'+
+    '<span class="lb">next up</span>'+
+    (nb?'<span class="tt">'+String(nb.focus||nb.calTitle||'untitled').replace(/</g,'&lt;')+'</span>'+
+        '<span class="tm">'+nb.start+'–'+(nb.end||'')+'</span>'
+       :'<span class="tt">nothing else scheduled</span>'+
+        '<span class="tm">the rest of the day is yours</span>')+
+    '</div>';
+  return out;
+}
+function goBlock(id){ setViewDay(today()); setView('today'); panelOverride=id; render(); }
+function renderFocusHome(){
+  const host=document.getElementById('focusView');
+  if(!host||viewMode!=='focus') return;
+  const k=today(), d=day(k);
+  const b=(d.blocks||[]).filter(function(x){ return isCurrentBlock(x)&&!isEmptyBlock(x); })[0];
+  let hero;
+  if(!b){
+    const nb=nextBlockToday();
+    hero='<div class="fhhero idle">'+
+      '<div class="fhk">nothing scheduled right now</div>'+
+      (nb?'<div class="fhtop">'+String(nb.focus||'untitled').replace(/</g,'&lt;')+'</div>'+
+          '<div class="fhmeta">starts at '+nb.start+'</div>'
+         :'<div class="fhtop">the day is open</div>'+
+          '<div class="fhmeta">make a block on the timeline whenever you want one</div>')+
+      '<div class="fhbtns"><button class="fhgo" onclick="setView(\'today\')">open the timeline</button></div>'+
+      '</div>';
+  } else {
+    const st=toMin(b.start), dur=blockDur(b), nm=nowMinutes()%1440;
+    const leftMin=Math.max(0,st+dur-nm);
+    const pct=dur?Math.min(1,Math.max(0,(nm-st)/dur)):0;
+    const all=blockAllTasks(b,k);
+    const done=all.filter(function(t){ return itemDone(t,k); }).length;
+    const top=topTaskOf(b,k);
+    const rest=all.filter(function(t){ return !top||t.id!==top.id; });
+    const locked=focusBlockId===b.id;
+    hero='<div class="fhhero'+(locked?' locked':'')+'">'+
+      '<div class="fhtoprow">'+
+        '<div class="fhring">'+ringSvg(pct,locked?'var(--pink-deep)':'var(--mint-deep)',42,9)+
+          '<span class="fhmin"><b>'+leftMin+'</b><i>min left</i></span></div>'+
+        '<div class="fhwhat">'+
+          '<div class="fhk">'+(locked?'locked in':'right now')+'</div>'+
+          '<div class="fhblock">'+String(b.focus||b.calTitle||'open block').replace(/</g,'&lt;')+'</div>'+
+          '<div class="fhmeta">'+b.start+'–'+(b.end||'')+' · '+done+'/'+all.length+' done</div>'+
+        '</div>'+
+        '<div class="fhbtns">'+
+          '<button class="fhgo'+(locked?' on':'')+'" onclick="'+(locked?'exitFocus()':'lockIn(\''+b.id+'\')')+'">'+
+            (locked?'❚❚ hold':'▶ focus')+'</button>'+
+          '<button class="fhalt" onclick="goBlock(\''+b.id+'\')">open block</button>'+
+        '</div>'+
+      '</div>'+
+      (top?
+        '<div class="fhtask">'+
+          '<div class="fhtk">top task</div>'+
+          '<div class="fhtrow">'+
+            '<button class="fhbox" onclick="toggleUnit(\''+top.id+'\',event)" title="mark done"></button>'+
+            '<span class="fhtx">'+String(top.text).replace(/</g,'&lt;')+'</span>'+
+            (taskElapsed(top)?'<span class="fhel" data-timer-live-task="'+top.id+'">'+mmss(taskElapsed(top))+'</span>':'')+
+            '<button class="fhplay'+(top.timerStart?' on':'')+'" onclick="toggleTaskTimerBank(\''+top.id+'\',event)">'+
+              (top.timerStart?'❚❚ pause':'▶ start')+'</button>'+
+          '</div>'+
+          (subtasksOf(top).length?'<div class="fhsubs">'+subtasksOf(top).map(function(sx){
+            const sd=itemDone(sx,k);
+            return '<div class="fhsub'+(sd?' done':'')+'">'+
+              '<button class="btbox sm" onclick="toggleUnit(\''+sx.id+'\',event)">'+(sd?'✓':'')+'</button>'+
+              '<span>'+String(sx.text).replace(/</g,'&lt;')+'</span></div>';
+          }).join('')+'</div>':'')+
+        '</div>'
+        :'<div class="fhtask empty"><div class="fhtk">top task</div>'+
+         '<div class="fhtrow"><span class="fhtx dim">'+(all.length?'everything in this block is done':'nothing pinned to this block yet')+'</span>'+
+         '<button class="fhalt" onclick="goBlock(\''+b.id+'\')">'+(all.length?'open block':'add tasks')+'</button></div></div>')+
+      (rest.length?'<div class="fhrest"><div class="fhtk">also in this block</div>'+
+        rest.map(function(t){ return blockTaskRowHTML(t,k); }).join('')+'</div>':'')+
+      '</div>';
+  }
+  host.innerHTML=hero+'<div class="fhtrackers">'+focusTrackerRowHTML()+'</div>'+
+    '<div class="fhnav">'+
+      '<button onclick="setView(\'today\')"><b>day</b><span>timeline &amp; inbox</span></button>'+
+      '<button onclick="setView(\'planning\')"><b>week</b><span>plan the calendar</span></button>'+
+      '<button onclick="openSheet(\'habits\')"><b>track</b><span>habits, reading, more</span></button>'+
+      '<button onclick="setView(\'notes\')"><b>notes</b><span>this week’s log</span></button>'+
+    '</div>';
+}
 /* ===================== desktop sidebar =====================
    Replaces the hero header above 900px. The header laid the date, day navigation and a single
    water bar across the top and left every other tracker to the card grid, which meant most of
@@ -4353,7 +4469,7 @@ function renderDeskSidebar(){
     const dd=new Date(wkStart); dd.setDate(wkStart.getDate()+i);
     const dk=dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
     const sc=dayScore(dk), sel=dk===k, isTdy=dk===today();
-    dots+='<button class="dsdot'+(sel?' on':'')+(isTdy?' istoday':'')+'" onclick="setViewDay(\''+dk+'\')" title="'+dk+'">'+
+    dots+='<button class="dsdot'+(sel?' on':'')+(isTdy?' istoday':'')+'" onclick="goDay(\''+dk+'\')" title="'+dk+'">'+
       '<span class="rw">'+ringSvg(sc,scoreColor(sc),43,10)+'<span class="face">'+letters[i]+'</span></span>'+
       '<span class="dnum">'+dd.getDate()+'</span></button>';
   }
@@ -4398,6 +4514,15 @@ function renderDeskSidebar(){
         '</div>'+
       '</div>'+
       '<div class="dsweek">'+dots+'</div>'+
+      /* the view switcher lives here now. It used to be the .viewtabs strip inside the hero, and
+         the hero is what the rail replaced - without this there was no way back to the focus
+         screen once you had navigated off it. */
+      '<nav class="dsnav2">'+
+        [['focus','focus'],['today','day'],['planning','week'],['month','month'],['notes','notes'],['more','more']]
+        .map(function(v){
+          return '<button class="'+(viewMode===v[0]?'on':'')+'" onclick="setView(\''+v[0]+'\')">'+v[1]+'</button>';
+        }).join('')+
+      '</nav>'+
       '<div class="dsrings">'+rings+'</div>'+
       '<div class="dsbars">'+bars+'</div>'+
       paper+
@@ -5478,6 +5603,7 @@ function render(){
   syncDeskDay();
   renderPrismFocus();
   renderDeskFocus();
+  renderFocusHome();
   renderWeekGrid();
   renderDayRailHint();
   renderFocusSession();
