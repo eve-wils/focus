@@ -2312,7 +2312,37 @@ function blockTasksFor(b,k){ k=k||vday(); return S.tasks.filter(function(t){retu
    block's task list, the inbox, a side-quest category — so a swap or a drop only ever touches the
    two rows actually involved, never a global renumber. */
 function byOrder(a,b){ return (a.order||0)-(b.order||0); }
+/* Everything sharing one block on a given day, whatever kind it is — the rows you actually see
+   listed together inside that block. Rituals resolve through homeOf() rather than a raw blockId,
+   because a habit lands in its routine block by derivation, without anyone assigning it there day
+   by day. */
+function unitsInBlock(blockId,k){
+  k=k||vday();
+  return S.tasks.filter(function(x){
+    if(itemSkipped(x,k)) return false;
+    if(x.kind==='ritual') return homeOf(x,k)===blockId&&dueOnDay(x,k);
+    if(x.blockId===blockId&&x.day===k) return true;
+    return placementOf(x.id,k)===blockId;
+  });
+}
 function siblingGroup(t){
+  /* Reordering inside a block comes first, because a block mixes kinds: a routine block holds
+     ritual habits, an ordinary one holds tasks, and either can also hold a placed side quest.
+     Grouping by bucket alone got this wrong in a way that showed: ritual units carry
+     bucket:'habit', which had no case at all below, so siblingGroup returned [t] — sibs.length<2
+     — and reorderArrowsHTML rendered nothing. Routine items simply could not be reordered, by
+     arrow or by drag, since onTaskRowDrop consults the same grouping.
+     Ordering lives on the unit's own `order`, not per day, so a routine you arrange once keeps
+     that arrangement every following day. */
+  const k=vday();
+  const home=(t.kind==='ritual')?homeOf(t,k)
+    :((t.blockId&&t.day===k)?t.blockId:placementOf(t.id,k));
+  if(home&&blockOf(home)) return unitsInBlock(home,k);
+  /* a ritual whose routine block doesn't exist on this day still reorders within its family */
+  if(t.kind==='ritual'){
+    const fam=ritualFamilyOf(t,k);
+    if(fam) return ritualUnits().filter(function(x){ return ritualFamilyOf(x,k)===fam&&dueOnDay(x,k); });
+  }
   /* the bank's visual grouping is envelope -> project, so "up"/"down" only ever compares against
      the exact chips shown in that same sub-list, not the whole bank */
   if(t.bucket==='bank') return S.tasks.filter(function(x){return x.bucket==='bank'&&x.envelope===t.envelope&&(x.project||'Uncategorized')===(t.project||'Uncategorized');});
@@ -2324,10 +2354,26 @@ function siblingGroup(t){
   }
   return [t];
 }
+/* Give a sibling group distinct, evenly spaced order values, but only when it needs it.
+   Why this is necessary: makeUnit() defaults `order` to Date.now(), and anything created in one
+   pass — the ritual seed, the unified-items migration, a bulk import — gets the SAME millisecond
+   for every record. Swapping two identical values is a no-op, and the drop path's midpoint
+   (prev.order+target.order)/2 lands back on the value it started from, so reordering silently did
+   nothing for any group born together.
+   Array.prototype.sort is stable, so sorting a tied group preserves the order already on screen:
+   normalizing writes down the arrangement you can currently see, then the caller moves one row
+   within it. */
+function normalizeOrders(sibs){
+  const sorted=sibs.slice().sort(byOrder);
+  const distinct={}; let dupes=false;
+  sorted.forEach(function(x){ if(distinct[x.order]) dupes=true; distinct[x.order]=true; });
+  if(dupes) sorted.forEach(function(x,i){ x.order=(i+1)*1000; });
+  return sorted;
+}
 function moveUnit(id,dir,ev){
   if(ev) ev.stopPropagation();
   const t=taskById(id)||unitById(id); if(!t) return;
-  const sibs=siblingGroup(t).sort(byOrder);
+  const sibs=normalizeOrders(siblingGroup(t));
   const i=sibs.findIndex(function(x){return x.id===id;});
   const j=i+dir;
   if(i<0||j<0||j>=sibs.length) return;
@@ -2335,7 +2381,7 @@ function moveUnit(id,dir,ev){
   save(); render();
 }
 function reorderArrowsHTML(t){
-  const sibs=siblingGroup(t).sort(byOrder);
+  const sibs=siblingGroup(t).slice().sort(byOrder);
   if(sibs.length<2) return '';
   const i=sibs.findIndex(function(x){return x.id===t.id;});
   return '<button class="arrowbtn" title="move up"'+(i<=0?' disabled':'')+' onclick="moveUnit(\''+t.id+'\',-1,event)">↑</button>'+
@@ -2352,7 +2398,7 @@ function onTaskRowDrop(ev,targetId){
   const id=ev.dataTransfer.getData('text/task')||ev.dataTransfer.getData('text/plain');
   if(!id||id===targetId) return; /* let it bubble to the container */
   const t=taskById(id), target=taskById(targetId); if(!t||!target) return;
-  const sibs=siblingGroup(target).sort(byOrder);
+  const sibs=normalizeOrders(siblingGroup(target));
   /* dragged from a different list entirely — don't handle it here, let it bubble up to whatever
      container drop handler (onBlockDrop/onDayDrop/...) actually reassigns its placement */
   if(!sibs.some(function(x){return x.id===id;})) return;
