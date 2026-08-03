@@ -334,7 +334,10 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
 .arrowbtn:disabled{opacity:.3;cursor:not-allowed}
 .arrowbtn:disabled:hover{color:var(--ink-3);border-color:var(--stroke)}
 .addtiny{display:flex;gap:8px;margin-top:6px}
-.addtiny input{flex:1;border:none;border-bottom:1px solid var(--stroke);background:transparent;padding:6px 2px;outline:none}
+/* min-width:0 matters: a flex item defaults to min-width:auto, so this input's intrinsic width
+   (driven by its long placeholder) pushed it over the + button beside it and swallowed the tap.
+   Only visible once a column got narrow, but it was wrong at every width. */
+.addtiny input{flex:1;min-width:0;border:none;border-bottom:1px solid var(--stroke);background:transparent;padding:6px 2px;outline:none}
 .addtiny input:focus{border-color:var(--lav-deep)}
 .bnotes{width:100%;border:none;border-top:1px dashed var(--stroke);background:transparent;
   padding:8px 2px 0;font-size:12.5px;resize:vertical;min-height:26px;outline:none;margin-top:6px;color:var(--ink-2)}
@@ -1072,3 +1075,53 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 .drag{min-height:36px;min-width:30px;background:none;border:none;color:var(--ink-3);
   font-family:var(--serif);cursor:pointer;padding:0 4px}
 .drag.picked{color:var(--mint-deep)}
+
+/* ===================== day view: half-width timeline, tasks beside it =====================
+   The day is a fixed picture of the schedule, so it doesn't need the full column: it takes the
+   left half and today's tasks sit in the right half, which puts a task and the block it's going
+   into on screen at the same time. That is what makes tap-a-task-then-tap-a-block work without
+   scrolling between the two halves. Everything else on the day (side quests, intentions) flows
+   full width underneath. */
+@media (max-width:760px){
+  #todayView .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+  #todayColA,#todayColB{min-width:0}
+  #todayColC{grid-column:1 / -1}
+  /* the timeline is half as wide now, so its furniture has to shrink with it */
+  #todayColA .timeline{font-size:9px}
+  /* the grid carried min-width:260px from when it had a full column to itself. In a 179px half
+     column that is wider than its parent, so the whole grid — blocks and all — hung over the gap
+     and into the task list. Let it size to the column it is actually in. */
+  #todayColA .gridwrap{min-width:0}
+  #todayColA .gridaxis{flex:0 0 30px}
+  /* at half width a block label is wider than its box, and an overflowing label spilled across
+     the gap into the task column. Clip inside the block instead. */
+  #todayColA .gridblock{padding:2px 3px;overflow:hidden}
+  #todayColA .gridblock .gfocus,#todayColA .gridblock .gtime,
+  #todayColA .gaprollupabs>span,#todayColA .pastrollupabs{
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+  #todayColA .gaprollupabs,#todayColA .pastrollupabs{overflow:hidden}
+  #todayColA .gh{font-size:8px}
+  #todayColA .card{padding:10px 8px}
+  #todayColA .dayrail{flex-wrap:wrap;gap:4px}
+  #todayColA .weekbtn,#todayColA .addblkbtn{font-size:9px;letter-spacing:1.1px;padding:5px 7px}
+  #todayColA .dayrailhint{flex-basis:100%;order:3}
+  #todayColB .card{padding:10px 8px}
+  #todayColB .taskrow2{padding:6px 4px}
+  #todayColB .tt{font-size:11.5px}
+  /* In a half-width column the full control strip wrapped onto four lines and a single task ran
+     past 100px tall. Keep the three that matter for this screen — pick it up, give it subtasks,
+     open everything else — and let ⋯ hold the rest, which is what it is for. */
+  #todayColB .tr2-meta{flex-wrap:wrap;gap:3px}
+  #todayColB .tr2-meta>*{display:none}
+  #todayColB .tr2-meta>.drag,
+  #todayColB .tr2-meta>.subbtn,
+  #todayColB .tr2-meta>.morebtn,
+  #todayColB .tr2-meta>.tclock{display:inline-flex;align-items:center}
+  /* "@ today" on the today view states the obvious and cost a whole line */
+  /* the ⋯ menu itself stays complete, so nothing is actually lost */
+  #todayColB .moreacts{display:flex;flex-wrap:wrap;gap:4px}
+}
+/* the subtask control, promoted out of the ⋯ menu */
+.subbtn{background:none;border:1px solid var(--stroke);color:var(--ink-3);font-family:var(--serif);
+  font-size:9.5px;letter-spacing:.6px;padding:4px 7px;min-height:32px;cursor:pointer}
+.subbtn.on,.subbtn:hover{border-color:var(--mint-deep);color:var(--mint-deep)}
