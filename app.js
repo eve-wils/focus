@@ -776,6 +776,28 @@ function ghSetToken(t){
 }
 function utf8ToB64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function b64ToUtf8(str){ return decodeURIComponent(escape(atob(str.replace(/\n/g,'')))); }
+/* The copy pushed to GitHub is written one value per line with object keys sorted, so a sync
+   shows up in `git diff` as the few lines that actually changed instead of one rewritten 50KB
+   line. Sorting the keys matters as much as the newlines do: object key order in JS is insertion
+   order, so a day or a field that happens to be created in a different order would otherwise
+   rewrite its whole block for no reason, and the diff would be noise again. As a side effect the
+   day map comes out chronological, which is how you'd want to read it anyway.
+   Arrays are deliberately left alone - the order of S.tasks is data the user set by dragging
+   things around, not an implementation detail to normalise away.
+   Only the pushed copy is formatted. The localStorage write and the undo snapshots stay compact:
+   nothing ever diffs those, they run on every keystroke-ish action, and the indentation would be
+   pure overhead. Formatting is a serialisation choice, so nothing that reads state needs to know
+   about it - JSON.parse is indifferent, and the wipe guard counts records, not bytes. */
+function ghStableJson(o){
+  return JSON.stringify(o,function(key,value){
+    if(value&&typeof value==='object'&&!Array.isArray(value)){
+      const out={};
+      Object.keys(value).sort().forEach(function(k){ out[k]=value[k]; });
+      return out;
+    }
+    return value;
+  },2);
+}
 function ghHeaders(){
   return {Authorization:'Bearer '+ghToken, Accept:'application/vnd.github+json',
     'X-GitHub-Api-Version':'2022-11-28', 'Content-Type':'application/json'};
@@ -866,7 +888,7 @@ async function ghPushNow(opts){
   try{
     await ghEnsureBranch();
     if(ghSha===null){ try{ await ghFetchFile(); }catch(e){ /* no file synced yet - fine */ } }
-    const body={message:'sync '+new Date().toISOString(), content:utf8ToB64(JSON.stringify(S)), branch:GH_BRANCH};
+    const body={message:'sync '+new Date().toISOString(), content:utf8ToB64(ghStableJson(S)), branch:GH_BRANCH};
     if(ghSha) body.sha=ghSha;
     const url='https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO+'/contents/'+GH_PATH;
     let r=await fetch(url,{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body),keepalive:!!opts.keepalive});
