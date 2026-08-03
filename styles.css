@@ -962,3 +962,39 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 .pfalt{min-height:48px;padding:0 16px;background:none;border:1px solid var(--stroke);
   color:var(--ink-2);font-family:var(--serif);font-size:12px;letter-spacing:2px;cursor:pointer}
 @media (max-width:760px){ #prismFocus{display:block} }
+
+/* ===================== phone input + popup scrolling =====================
+   iOS Safari auto-zooms the page whenever a focused form control renders below 16px, and there
+   is no way back out of that zoom except pinching. The app's controls are 11-14px by design, so
+   every tap-to-type on a phone zoomed in. Forcing 16px at this breakpoint is the standard fix and
+   keeps pinch-zoom available, unlike the maximum-scale=1 trick which disables it for everyone. */
+@media (max-width:760px){
+  input,select,textarea,
+  .psin,.addrow input,.addrow select,.addtiny input,.addchip input,
+  .inline-edit input,.bdactions select,.bdtime input,.wsub select,.hscoladd input,.themerow select{
+    font-size:16px;
+  }
+  /* a sheet scrolls its own content and stops there, instead of handing the gesture to the page
+     behind it once it hits an end */
+  .pssheet,.blockdetail{overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+}
+
+/* tap-to-plan day picker on a task row, and the block editor's bank chips — both exist so that
+   nothing on a phone requires a press-and-drag to reach */
+.daypick{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:8px}
+.dpday{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  min-height:48px;border:1px solid var(--stroke);background:var(--glass);cursor:pointer;
+  font-family:var(--serif);color:var(--ink-2);padding:5px 2px}
+.dpday .dpl{font-size:8.5px;letter-spacing:1.2px;color:var(--ink-3)}
+.dpday .dpn{font-size:13px;font-weight:600}
+.dpday.on{background:var(--mint-deep);border-color:var(--mint-deep);color:var(--bgpage)}
+.dpday.on .dpl{color:var(--bgpage)}
+.dpday.dpclear .dpn{font-size:12px}
+.bdbanklbl{font-size:9.5px;letter-spacing:1.4px;color:var(--ink-3);margin:14px 0 7px}
+.bdbank{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;max-height:184px;
+  overflow-y:auto;overscroll-behavior:contain}
+.bankchip{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:8px 11px;
+  background:transparent;border:1px dashed var(--mint-deep);color:var(--ink-2);
+  font-family:var(--serif);font-size:11.5px;cursor:pointer;text-align:left;max-width:100%}
+.bankchip:hover{background:var(--mint)}
+.bankchip .bcmin{font-size:9px;letter-spacing:1px;color:var(--ink-3);flex:none}
