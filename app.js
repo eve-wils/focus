@@ -143,6 +143,7 @@ function blankState(){ return { v:5, lastDate:null, days:{},
   tasks:[], notionImportedAt:null, notionLinksRepairedAt:null, blockTasksMigratedAt:null,
   mediBestSec:0, papers:[],
   budget:{monthlyCents:0, startsOn:1}, txns:[], txnCats:DEFAULT_TXN_CATS.slice(),
+  blockRules:[],
   categories:DEFAULT_CATEGORIES.slice(),
   layout:{cols:DEFAULT_LAYOUT_COLS.map(function(c){return c.slice();}), collapsed:{}},
   theme:Object.assign({},DEFAULT_THEME),
@@ -227,6 +228,15 @@ function backfillMeals(){
    which is block-scoped prose attached to a specific block on a specific day. */
 function backfillLogEntries(){
   if(!S.logEntries) S.logEntries=[];
+}
+/* v:5 — repeating blocks. Additive: a state with no rules simply has none, and every existing
+   block stays a one-off until someone gives it a repeat. */
+function backfillBlockRules(){
+  if(!S.blockRules) S.blockRules=[];
+  S.blockRules.forEach(function(r){
+    if(!r.sched) r.sched={type:'none'};
+    if(!r.anchor) r.anchor=today();
+  });
 }
 /* v:5 — rail pinning. `atMin` places a task at an exact clock minute outside any block; `metric`
    is the display unit for a count-mode task ("pages", "plates"). Everything else the task tree
@@ -1072,6 +1082,7 @@ function hydrateState(){
   backfillRitualDefs(); backfillBlockTypes();
   /* v:5 additions — each idempotent and null-safe, same convention as the ones above */
   backfillTxns(); backfillWaterGoal(); backfillMeals(); backfillLogEntries(); backfillPinning();
+  backfillBlockRules();
   if(S.readGoal===undefined) S.readGoal=150;
   if(S.mediBestSec===undefined) S.mediBestSec=0;
   importNotionSeed(); repairNotionLinks(); migrateBlockTasksToUnified();
@@ -2807,6 +2818,172 @@ function mergeEvents(evs){
    regeneration from undoing today's decision. The list of rituals itself lives in S.ritualDefs
    (backfillRitualDefs), not a fixed const, so adding one is just addRitualDef() — this loop then
    seeds its block onto every day going forward same as sunrise/moonlight always have. */
+/* ===================== repeating blocks =====================
+   A repeating block is a RULE in S.blockRules, not a row copied into every future day. Days are
+   historical fact: writing instances forward would mean a rule edited in March silently rewrote
+   what February looked like, and deleting a rule would strand orphans in days you had already
+   lived. Instead ensureRuleBlocks(k) materialises `rule_<ruleId>_<k>` into a day the first time
+   that day is opened, and prunes any instance that is still untouched once its rule stops
+   applying — the same shape ensureRoutineBlocks/buildGaps already use for ritual and filler
+   blocks.
+   Recurrence reuses the task `sched` vocabulary ({type,days,dom}) so there is one idea of
+   "repeats" in the app, plus `interval` for every-other-week, which tasks never needed. */
+const BLOCK_REPEATS=[
+  {id:'none',    label:'once'},
+  {id:'daily',   label:'every day'},
+  {id:'weekly',  label:'certain days'},
+  {id:'biweekly',label:'every other week'},
+  {id:'monthly', label:'monthly'}
+];
+function blockRuleById(id){ return (S.blockRules||[]).filter(function(r){return r.id===id;})[0]; }
+/* whole weeks between two dates, measured from each one's Sunday, so an every-other-week rule
+   lands on the same parity regardless of which weekday you are asking about */
+function weeksBetween(aKey,bKey){
+  const wa=weekDatesOf(aKey)[0], wb=weekDatesOf(bKey)[0];
+  return Math.round(daysBetween(wa,wb)/7);
+}
+function ruleDueOn(rule,k){
+  const sc=rule.sched||{type:'none'};
+  const dow=dowOf(k);
+  if(sc.type==='daily') return true;
+  if(sc.type==='weekly') return (sc.days||[]).indexOf(dow)>=0;
+  if(sc.type==='biweekly'){
+    if((sc.days||[]).indexOf(dow)<0) return false;
+    const n=weeksBetween(rule.anchor||today(),k);
+    return ((n%2)+2)%2===0;
+  }
+  if(sc.type==='monthly') return (+k.split('-')[2])===(sc.dom||1);
+  return false;
+}
+/* An instance nobody has touched is safe to withdraw when its rule changes or goes away; one with
+   tasks, quests, notes or a renamed focus has become that day's own record and is left alone.
+   Two things this has to get right:
+   - the placement lookup is day-keyed, not vday()-keyed. blockQuests() reads vday() internally,
+     so using it here would judge every day by whatever day happened to be on screen.
+   - once the rule is deleted there is nothing left to compare the focus against, so an orphan is
+     judged on content alone. Comparing against a missing rule made every orphan look renamed,
+     and turning a repeat back into a one-off stranded its future copies instead of withdrawing
+     them. */
+function ruleInstanceUntouched(b,k){
+  k=k||vday();
+  if(blockTasksFor(b,k).length) return false;
+  if(b.notes&&b.notes.trim()) return false;
+  const dd=S.days[k];
+  const placed=(S.tasks||[]).some(function(t){
+    return !!(dd&&dd.assign&&dd.assign[t.id]===b.id);
+  });
+  if(placed) return false;
+  const r=blockRuleById(b.ruleId);
+  if(r&&b.focus!==r.focus) return false;
+  return true;
+}
+function ensureRuleBlocks(k){
+  k=k||vday();
+  if(daysBetween(today(),k)<0) return;   /* never invent a block on a day already behind us */
+  const d=day(k);
+  (S.blockRules||[]).forEach(function(r){
+    const iid='rule_'+r.id+'_'+k;
+    /* The block the rule was PROMOTED FROM still lives on its own day carrying this ruleId, and
+       it is that day's instance. Matching only on the generated id meant the origin day got the
+       real block plus a generated twin of itself. */
+    const has=(d.blocks||[]).some(function(b){return b.id===iid||b.ruleId===r.id;});
+    if(ruleDueOn(r,k)){
+      if(!has) d.blocks.push({id:iid, ruleId:r.id, start:r.start, end:r.end, focus:r.focus||'',
+        notes:'', type:r.type||'open', category:r.category||null});
+    }else{
+      /* only ever withdraw a generated instance — the origin block is a real block the user made
+         on that day, and a rule no longer covering it is not a reason to delete it */
+      d.blocks=d.blocks.filter(function(b){ return !(b.id===iid&&ruleInstanceUntouched(b,k)); });
+    }
+  });
+  /* a rule that was deleted outright takes its untouched instances with it */
+  d.blocks=d.blocks.filter(function(b){
+    return !(b.ruleId&&!blockRuleById(b.ruleId)&&ruleInstanceUntouched(b,k));
+  });
+  d.blocks.sort(function(a,b){return toMin(a.start)-toMin(b.start);});
+}
+/* Turning a one-off block into a repeating one promotes it to a rule and re-points the block at
+   it, so the row you were looking at becomes this week's instance rather than a leftover twin. */
+function setBlockRepeat(blockId,type){
+  const b=blockOf(blockId); if(!b) return;
+  if(type==='none'){
+    if(b.ruleId){ S.blockRules=(S.blockRules||[]).filter(function(r){return r.id!==b.ruleId;}); delete b.ruleId; }
+    save(); render(); return;
+  }
+  let r=b.ruleId?blockRuleById(b.ruleId):null;
+  if(!r){
+    r={id:'r'+Date.now(), start:b.start, end:b.end, focus:b.focus||'', category:b.category||null,
+       type:b.type||'open', anchor:vday(), sched:{type:type, days:[dowOf(vday())], dom:+vday().split('-')[2]}};
+    if(!S.blockRules) S.blockRules=[];
+    S.blockRules.push(r);
+    b.ruleId=r.id;
+  }
+  r.sched=Object.assign({days:[dowOf(vday())], dom:+vday().split('-')[2]}, r.sched||{}, {type:type});
+  if(type==='biweekly'||type==='weekly'){ if(!r.sched.days||!r.sched.days.length) r.sched.days=[dowOf(vday())]; }
+  save(); render();
+}
+function toggleBlockRepeatDay(blockId,n){
+  const b=blockOf(blockId); if(!b||!b.ruleId) return;
+  const r=blockRuleById(b.ruleId); if(!r) return;
+  const days=(r.sched.days||[]).slice();
+  const i=days.indexOf(n);
+  if(i>=0) days.splice(i,1); else days.push(n);
+  r.sched.days=days;
+  save(); render();
+}
+function setBlockRepeatDom(blockId,v){
+  const b=blockOf(blockId); if(!b||!b.ruleId) return;
+  const r=blockRuleById(b.ruleId); if(!r) return;
+  const n=parseInt(v,10);
+  r.sched.dom=(isFinite(n)&&n>=1&&n<=28)?n:1;
+  save(); render();
+}
+/* edits to a repeating block's shape belong to the rule, or every future instance would revert */
+function syncRuleFromBlock(b){
+  if(!b||!b.ruleId) return;
+  const r=blockRuleById(b.ruleId); if(!r) return;
+  r.start=b.start; r.end=b.end; r.focus=b.focus||''; r.category=b.category||null; r.type=b.type||'open';
+}
+function blockRepeatLabel(b){
+  if(!b||!b.ruleId) return '';
+  const r=blockRuleById(b.ruleId); if(!r) return '';
+  const sc=r.sched||{}, full=['sun','mon','tue','wed','thu','fri','sat'];
+  if(sc.type==='daily') return 'every day';
+  if(sc.type==='monthly') return 'monthly · day '+(sc.dom||1);
+  const ds=(sc.days||[]).slice().sort();
+  const names=ds.map(function(n){return full[n];}).join('/');
+  if(sc.type==='weekly') return (ds.length>1?ds.length+'× weekly · ':'weekly · ')+names;
+  if(sc.type==='biweekly') return 'every other week · '+names;
+  return '';
+}
+function blockRepeatEditorHTML(b){
+  const r=b.ruleId?blockRuleById(b.ruleId):null;
+  const cur=r?(r.sched||{}).type:'none';
+  const full=['sun','mon','tue','wed','thu','fri','sat'];
+  let h='<div class="schededit" onclick="event.stopPropagation()">';
+  h+='<div class="schedhead">how often does this block repeat?</div><div class="schedrow seg">';
+  BLOCK_REPEATS.forEach(function(o){
+    h+='<button class="schedbtn'+(cur===o.id?' on':'')+'" onclick="setBlockRepeat(\''+b.id+'\',\''+o.id+'\')">'+o.label+'</button>';
+  });
+  h+='</div>';
+  if(r&&(cur==='weekly'||cur==='biweekly')){
+    const on=(r.sched.days||[]);
+    h+='<div class="schedrow days">'+full.map(function(lb,n){
+      return '<button class="schedday'+(on.indexOf(n)>=0?' on':'')+'" title="'+lb+'" onclick="toggleBlockRepeatDay(\''+b.id+'\','+n+')">'+lb.charAt(0).toUpperCase()+'</button>';
+    }).join('')+'</div>';
+    h+='<div class="schedhint">'+(on.length?'<b>'+blockRepeatLabel(b)+'</b>':'tap the days it lands on')+
+      (cur==='biweekly'?' · counted from the week of '+(r.anchor||today()):'')+'</div>';
+  }
+  if(r&&cur==='monthly'){
+    h+='<div class="schedrow"><span class="schedhint">on day</span>'+
+       '<input type="number" class="schednum" min="1" max="28" value="'+(r.sched.dom||1)+'" onchange="setBlockRepeatDom(\''+b.id+'\',this.value)">'+
+       '<span class="schedhint">of every month</span></div>';
+  }
+  if(cur==='none') h+='<div class="schedhint">a one-off — this day only</div>';
+  else h+='<div class="schedhint">future days get this block when you open them; days you have already used keep whatever they had</div>';
+  h+='<div class="schedrow"><button class="btn tiny ghost" onclick="toggleEdit(null)">done</button></div>';
+  return h+'</div>';
+}
 function ensureRoutineBlocks(k){
   k=k||vday();
   if(daysBetween(today(),k)<0) return;   /* never invent a routine on a day already behind us */
@@ -2826,6 +3003,7 @@ function buildGaps(k){
      never opened would invent blocks that day never actually had */
   if(daysBetween(today(),k)<0) return;
   ensureRoutineBlocks(k);
+  ensureRuleBlocks(k);
   const d=day(k);
   d.blocks=d.blocks.filter(function(b){
     return !(b.auto&&!blockTasksFor(b,k).length&&!(b.notes&&b.notes.trim())&&!b.focus&&!b.category);
@@ -2932,7 +3110,7 @@ function createBlockAt(startTime,durMin){
 function delBlock(id){ if(!arm('blk:'+id))return;
   const d=day(vday()); d.blocks=d.blocks.filter(function(b){return b.id!==id;}); armed=null; save(); render(); }
 function blockOf(id){ return day(vday()).blocks.filter(function(b){return b.id===id;})[0]; }
-function setFocus(id,v){ const b=blockOf(id); if(b){b.focus=v;save();} }
+function setFocus(id,v){ const b=blockOf(id); if(b){b.focus=v; syncRuleFromBlock(b); save();} }
 function setNotes(id,v){ const b=blockOf(id); if(b){b.notes=v;save();} }
 /* ===================== block type ===================== */
 /* single focus / open are freely interchangeable by hand; ritual is exclusively the seeded routine
@@ -2946,11 +3124,12 @@ function setBlockType(id,ty){
   b.type=ty;
   if(ty==='project'){ if(!b.category) b.category=(S.categories&&S.categories[0])||'Uncategorized'; }
   else b.category=null;
+  syncRuleFromBlock(b);
   save(); render();
 }
 function setBlockCategory(id,v){
   const b=blockOf(id); if(!b) return;
-  b.category=(v||'').trim()||null; save(); render();
+  b.category=(v||'').trim()||null; syncRuleFromBlock(b); save(); render();
 }
 /* a project block pulls its work straight from the task bank instead of you assigning tasks to it
    one by one — whatever's first in that category's order is "current"; finishing or skipping it
@@ -2982,6 +3161,7 @@ function setBlockStart(id,v){
   if(endMin-startMin<MIN_GAP) startMin=endMin-MIN_GAP;
   if(startMin<0) startMin=0;
   b.start=fromMin(startMin);
+  syncRuleFromBlock(b);
   day(vday()).blocks.sort(function(a,bb){return toMin(a.start)-toMin(bb.start);});
   save(); render();
 }
@@ -2992,6 +3172,7 @@ function setBlockEnd(id,v){
   if(endMin-startMin<MIN_GAP) endMin=startMin+MIN_GAP;
   if(endMin>1440) endMin=1440;
   b.end=fromMin(endMin);
+  syncRuleFromBlock(b);
   save(); render();
 }
 /* quick-capture inside a block creates a real, unified task pinned straight to this block —
@@ -4088,11 +4269,15 @@ function blockGridBoxHTML(b,openId){
   return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+(pickedTaskId?' armed':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
     'ondragover="event.preventDefault();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onBlockDrop(event,\''+b.id+'\')" '+
     'onclick="'+(pickedTaskId?'placePickedInBlock(\''+b.id+'\',event)':'toggleBlock(\''+b.id+'\')')+'" '+
-    'title="'+(pickedTaskId?'tap to put the picked task here':(empty?'click to add a focus':'click for details'))+'">'+
+    'title="'+b.start+'–'+(b.end||'')+' '+(pickedTaskId?'· tap to put the picked task here':(empty?'· click to add a focus':'· click for details'))+'">'+
     (canResize?'<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')"></div>':'')+
-    '<span class="gtime">'+b.start+'–'+(b.end||'')+'</span>'+
+    /* no clock in the label. The axis running down the left already states the time for every
+       row, so repeating it inside a half-width block spent most of the width restating what was
+       already on screen and pushed the focus and the task count out of view. Kept in the title
+       attribute, and the detail panel still shows real start/end inputs. */
     (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon" title="'+BLOCK_TYPE_LABEL[b.type]+' block">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
     (empty&&!previewText?'<span class="gfocus emptyhint">+ add focus</span>':'<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>')+
+    (b.ruleId?'<span class="repeattag" title="'+blockRepeatLabel(b)+'">\u27f3</span>':'')+
     (totalCount?'<span class="progdot">'+doneCount+'/'+totalCount+'</span>':'')+
     (b.fromCal?'<span class="caltag">cal</span>':'')+
     (canResize?'<div class="reshandle bottom" onmousedown="startBlockResize(event,\''+b.id+'\',\'bottom\')"></div>':'')+
@@ -4119,6 +4304,7 @@ function renderBlockDetailPanel(){
       :'<select class="moreact" title="block type" onchange="setBlockType(\''+b.id+'\',this.value)">'+
         BLOCK_TYPES.map(function(ty){return '<option value="'+ty+'"'+(b.type===ty?' selected':'')+'>'+BLOCK_TYPE_LABEL[ty]+'</option>';}).join('')+'</select>')+
     (b.type==='project'?'<select class="moreact" title="project category" onchange="setBlockCategory(\''+b.id+'\',this.value)">'+categoryOptionsHTML(b.category)+'</select>':'')+
+    (b.routine?'':'<button class="moreact'+(editing==='brep:'+b.id?' on':'')+'" title="how often this block repeats" onclick="event.stopPropagation();toggleEdit(\'brep:'+b.id+'\')">\u27f3 '+(blockRepeatLabel(b)||'once')+'</button>')+
     '<button class="btn tiny soft" title="lock in and go fullscreen" onclick="lockIn(\''+b.id+'\')">'+(BLOCK_TYPE_ICON[b.type]||'🔒')+' lock in</button>'+
     '<button class="rowbtn" style="opacity:.6" title="skip everything in this block — streak safe" onclick="skipBlock(\''+b.id+'\',event)">skip all</button>'+
     '</div>'+
@@ -4127,6 +4313,7 @@ function renderBlockDetailPanel(){
       '<input type="time" value="'+(b.end||'')+'" onchange="setBlockEnd(\''+b.id+'\',this.value)">'+
     '</div>'+
     '<div class="bdfocus" contenteditable="true" data-ph="focus…" onblur="setFocus(\''+b.id+'\',this.textContent)">'+String(b.focus||'').replace(/</g,'&lt;')+'</div>';
+  if(editing==='brep:'+b.id) h+=blockRepeatEditorHTML(b);
   if(isCurrentBlock(b)) h+='<div class="nowline">'+hhmm(new Date())+' now · '+pct+'% through this block</div>';
   h+='<div class="bdtasks">';
   /* whatever's still open floats to the top; done and skipped rows stay put but settle
