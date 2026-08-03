@@ -669,15 +669,24 @@ function flushSave(){
 }
 /* ===================== GitHub sync =====================
    window.storage only exists inside the artifact runtime, so on GitHub Pages storageAvailable()
-   above is always false and this file has nothing durable to fall back on. This section makes
-   this repo itself the store: paste a fine-grained personal access token (Contents: read/write,
-   scoped to just this repo) and the current state gets written to GH_PATH on a dedicated GH_BRANCH
-   instead of main, so data syncs never touch the branch the Pages site is built from.
+   above is always false and this file has nothing durable to fall back on. A separate private
+   repo is the store instead: paste a fine-grained personal access token (Contents: read/write,
+   scoped to just that repo) and the current state gets written to GH_PATH there. Keeping the data
+   in its own repo rather than a branch of this one is what lets it sit on main without ever
+   touching the branch the Pages site is built from.
    The token is kept only in this browser's localStorage - it is never embedded in the page and
    only ever sent to api.github.com.
    Push is debounced separately from (and longer than) the local save() debounce above, so a burst
-   of edits produces one commit, not one per click. */
-const GH_OWNER='eve-wils', GH_REPO='focus_maxxer', GH_BRANCH='data', GH_PATH='data/state.json';
+   of edits produces one commit, not one per click.
+
+   These four values are load-bearing and easy to break silently, because nothing here fails at
+   build time if they point somewhere that doesn't exist - the app just comes up empty. They have
+   been wrong once already: the Prism Terminal branch was cut from a base still carrying the
+   original focus_maxxer/data/data/state.json placeholders, and merging it on 2026-08-01 carried
+   those back over the working values, which is why syncing stopped dead after 2026-07-31 and
+   "load latest from GitHub" started answering 404. If a merge ever touches this line, check it
+   against where the data actually lives before shipping. */
+const GH_OWNER='eve-wils', GH_REPO='focus_data', GH_BRANCH='main', GH_PATH='state.json';
 const GH_TOKEN_KEY='aura_gh_token';
 const GH_PRECONNECT_BACKUP_KEY='aura_gh_preconnect_backup';
 const GH_PUSH_DEBOUNCE_MS=2000;
@@ -747,20 +756,35 @@ function ghHeaders(){
   return {Authorization:'Bearer '+ghToken, Accept:'application/vnd.github+json',
     'X-GitHub-Api-Version':'2022-11-28', 'Content-Type':'application/json'};
 }
-/* the data branch may not exist yet on a repo that's only ever had main - create it once,
-   forked off main's current tip, then remember it's there for the rest of the session */
+/* the sync branch may not exist yet on a repo that's only ever had main - create it once, forked
+   off main's current tip, then remember it's there for the rest of the session.
+   The errors below name the repo and say what the status actually means. The old ones didn't:
+   pointing GH_REPO at a repo that doesn't exist produced "could not read main branch (404)",
+   which reads as a problem with the branch when the repo is what is missing, and sent a real
+   debugging session off in the wrong direction. GitHub answers 404 rather than 403 for a repo
+   the token cannot see, so the two are genuinely indistinguishable here and the message has to
+   offer both. */
 async function ghEnsureBranch(){
   if(ghBranchReady||!ghConfigured()) return ghBranchReady;
-  const base='https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO;
+  const where=GH_OWNER+'/'+GH_REPO;
+  const base='https://api.github.com/repos/'+where;
   const r=await fetch(base+'/git/ref/heads/'+GH_BRANCH,{headers:ghHeaders()});
   if(r.ok){ ghBranchReady=true; return true; }
-  if(r.status!==404) throw new Error('branch check failed ('+r.status+')');
+  if(r.status===401) throw new Error('the token was rejected (401) - it may have expired');
+  if(r.status!==404) throw new Error('could not check branch ‘'+GH_BRANCH+'’ on '+where+' ('+r.status+')');
+  /* the branch 404'd; find out whether the repo is there at all before trying to create it */
+  const repoRes=await fetch(base,{headers:ghHeaders()});
+  if(repoRes.status===404) throw new Error(where+' could not be read (404) - either it does not '+
+    'exist or this token is not scoped to it');
+  if(!repoRes.ok) throw new Error(where+' could not be read ('+repoRes.status+')');
   const mainRef=await fetch(base+'/git/ref/heads/main',{headers:ghHeaders()});
-  if(!mainRef.ok) throw new Error('could not read main branch ('+mainRef.status+')');
+  if(!mainRef.ok) throw new Error('branch ‘'+GH_BRANCH+'’ is missing from '+where+
+    ' and its main branch could not be read to fork from ('+mainRef.status+')');
   const mainSha=(await mainRef.json()).object.sha;
   const created=await fetch(base+'/git/refs',{method:'POST',headers:ghHeaders(),
     body:JSON.stringify({ref:'refs/heads/'+GH_BRANCH, sha:mainSha})});
-  if(!created.ok&&created.status!==422) throw new Error('could not create data branch ('+created.status+')');
+  if(!created.ok&&created.status!==422)
+    throw new Error('could not create branch ‘'+GH_BRANCH+'’ on '+where+' ('+created.status+')');
   ghBranchReady=true; return true;
 }
 async function ghFetchFile(){
