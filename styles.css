@@ -971,7 +971,9 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 @media (max-width:760px){
   input,select,textarea,
   .psin,.addrow input,.addrow select,.addtiny input,.addchip input,
-  .inline-edit input,.bdactions select,.bdtime input,.wsub select,.hscoladd input,.themerow select{
+  .inline-edit input,.bdactions select,.bdtime input,.wsub select,.hscoladd input,.themerow select,
+  /* class-scoped rules outrank the bare element selectors above, so each one has to be named */
+  .bnotes,.plannotes,.weeknote,.noteblktext{
     font-size:16px;
   }
   /* a sheet scrolls its own content and stops there, instead of handing the gesture to the page

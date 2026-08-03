@@ -669,26 +669,86 @@ function flushSave(){
 }
 /* ===================== GitHub sync =====================
    window.storage only exists inside the artifact runtime, so on GitHub Pages storageAvailable()
-   above is always false and this file has nothing durable to fall back on. This section makes
-   this repo itself the store: paste a fine-grained personal access token (Contents: read/write,
-   scoped to just this repo) and the current state gets written to GH_PATH on a dedicated GH_BRANCH
-   instead of main, so data syncs never touch the branch the Pages site is built from.
+   above is always false and this file has nothing durable to fall back on. A separate private
+   repo is the store instead: paste a fine-grained personal access token (Contents: read/write,
+   scoped to just that repo) and the current state gets written to GH_PATH there. Keeping the data
+   in its own repo rather than a branch of this one is what lets it sit on main without ever
+   touching the branch the Pages site is built from.
    The token is kept only in this browser's localStorage - it is never embedded in the page and
    only ever sent to api.github.com.
    Push is debounced separately from (and longer than) the local save() debounce above, so a burst
-   of edits produces one commit, not one per click. */
-const GH_OWNER='eve-wils', GH_REPO='focus_maxxer', GH_BRANCH='data', GH_PATH='data/state.json';
+   of edits produces one commit, not one per click.
+
+   These four values are load-bearing and easy to break silently, because nothing here fails at
+   build time if they point somewhere that doesn't exist - the app just comes up empty. They have
+   been wrong once already: the Prism Terminal branch was cut from a base still carrying the
+   original focus_maxxer/data/data/state.json placeholders, and merging it on 2026-08-01 carried
+   those back over the working values, which is why syncing stopped dead after 2026-07-31 and
+   "load latest from GitHub" started answering 404. If a merge ever touches this line, check it
+   against where the data actually lives before shipping. */
+const GH_OWNER='eve-wils', GH_REPO='focus_data', GH_BRANCH='main', GH_PATH='state.json';
 const GH_TOKEN_KEY='aura_gh_token';
 const GH_PRECONNECT_BACKUP_KEY='aura_gh_preconnect_backup';
 const GH_PUSH_DEBOUNCE_MS=2000;
 let ghToken=localStorage.getItem(GH_TOKEN_KEY)||'';
 let ghSha=null, ghSyncing=false, ghLastSyncAt=null, ghLastError=null, ghBranchReady=false;
 let ghSaveTimer=null, ghPushInFlight=false, ghPushQueued=false;
+/* ghReadOnly latches for the rest of the session when a read fails; ghGoodVolume is the size of
+   the last state we know GitHub actually holds; ghForceNext is the one-shot manual override. */
+let ghReadOnly=false, ghGoodVolume=-1, ghForceNext=false;
+/* ---------- wipe guard ----------
+   The bug this exists for: ghPull() returned null both for "the file isn't on the branch yet"
+   and for "the request failed", and load() treated the two identically — so one flaky read at
+   startup produced a blankState(), and the save() at the end of load() pushed that blank over
+   the real file two seconds later. In the commit log it looks like an ordinary sync, and every
+   device that pulls afterwards comes up empty.
+   Two independent defences, because either one alone can be walked around:
+     1. readers below distinguish 'absent' from 'error' and never blank on an error, and a failed
+        read latches ghReadOnly, which blocks every push for the rest of the session;
+     2. stateVolume()/wipeVerdict() weigh whatever is about to be pushed against the last state
+        GitHub is known to hold, and refuse one that destroys most of it — whatever produced it.
+   The same two thresholds are enforced again server-side in eve-wils/focus_data
+   (.github/workflows/state-guard.yml), which catches pushes from an older cached build of this
+   page that predates this file. Keep the numbers in step if you ever change them. */
+const WIPE_MIN_VOLUME=20;   /* under this there isn't enough data for a ratio to mean anything */
+const WIPE_RATIO=0.5;       /* losing half of everything inside one debounce is never a real edit */
+/* one number standing in for "how much of this person's data is in here". Counts records rather
+   than bytes, so a formatting change or a long note doesn't read as data appearing or vanishing. */
+function stateVolume(o){
+  if(!o||typeof o!=='object') return -1;
+  const days=(o.days&&typeof o.days==='object')?o.days:{};
+  let blocks=0, done=0, logs=0;
+  Object.keys(days).forEach(function(k){
+    const d=days[k]; if(!d||typeof d!=='object') return;
+    blocks+=(d.blocks||[]).length;
+    done+=Object.keys(d.done||{}).length;
+    logs+=(d.log||[]).length;
+  });
+  const len=function(v){ return Array.isArray(v)?v.length:0; };
+  return Object.keys(days).length+blocks+done+logs+
+    len(o.tasks)+len(o.quests)+len(o.custom)+len(o.papers)+len(o.spendLog)+
+    len(o.books)+len(o.doneBooks)+len(o.categories)+len(o.ritualDefs);
+}
+/* null when the candidate is safe to write, otherwise a human-readable reason to refuse it */
+function wipeVerdict(prevVolume,next){
+  if(!next||typeof next!=='object') return 'state is not an object';
+  if(next.v===undefined) return 'state has no version field';
+  const v=stateVolume(next);
+  if(v<0) return 'state could not be measured';
+  if(!(prevVolume>0)) return null;   /* nothing known-good to compare against yet */
+  if(v===0) return 'it is completely empty, and '+prevVolume+' records would be lost';
+  if(prevVolume>=WIPE_MIN_VOLUME&&v<prevVolume*WIPE_RATIO)
+    return 'it drops from '+prevVolume+' records to '+v;
+  return null;
+}
 function ghConfigured(){ return !!ghToken; }
 function ghSetToken(t){
   ghToken=(t||'').trim();
   if(ghToken) localStorage.setItem(GH_TOKEN_KEY,ghToken); else localStorage.removeItem(GH_TOKEN_KEY);
   ghBranchReady=false; ghSha=null; ghLastError=null; ghLastSyncAt=null;
+  /* a new token is a fresh relationship with the remote: drop the latch and the known-good mark
+     rather than judging the next push against a number measured under the old one */
+  ghReadOnly=false; ghGoodVolume=-1; ghForceNext=false;
 }
 function utf8ToB64(str){ return btoa(unescape(encodeURIComponent(str))); }
 function b64ToUtf8(str){ return decodeURIComponent(escape(atob(str.replace(/\n/g,'')))); }
@@ -696,20 +756,35 @@ function ghHeaders(){
   return {Authorization:'Bearer '+ghToken, Accept:'application/vnd.github+json',
     'X-GitHub-Api-Version':'2022-11-28', 'Content-Type':'application/json'};
 }
-/* the data branch may not exist yet on a repo that's only ever had main - create it once,
-   forked off main's current tip, then remember it's there for the rest of the session */
+/* the sync branch may not exist yet on a repo that's only ever had main - create it once, forked
+   off main's current tip, then remember it's there for the rest of the session.
+   The errors below name the repo and say what the status actually means. The old ones didn't:
+   pointing GH_REPO at a repo that doesn't exist produced "could not read main branch (404)",
+   which reads as a problem with the branch when the repo is what is missing, and sent a real
+   debugging session off in the wrong direction. GitHub answers 404 rather than 403 for a repo
+   the token cannot see, so the two are genuinely indistinguishable here and the message has to
+   offer both. */
 async function ghEnsureBranch(){
   if(ghBranchReady||!ghConfigured()) return ghBranchReady;
-  const base='https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO;
+  const where=GH_OWNER+'/'+GH_REPO;
+  const base='https://api.github.com/repos/'+where;
   const r=await fetch(base+'/git/ref/heads/'+GH_BRANCH,{headers:ghHeaders()});
   if(r.ok){ ghBranchReady=true; return true; }
-  if(r.status!==404) throw new Error('branch check failed ('+r.status+')');
+  if(r.status===401) throw new Error('the token was rejected (401) - it may have expired');
+  if(r.status!==404) throw new Error('could not check branch ‘'+GH_BRANCH+'’ on '+where+' ('+r.status+')');
+  /* the branch 404'd; find out whether the repo is there at all before trying to create it */
+  const repoRes=await fetch(base,{headers:ghHeaders()});
+  if(repoRes.status===404) throw new Error(where+' could not be read (404) - either it does not '+
+    'exist or this token is not scoped to it');
+  if(!repoRes.ok) throw new Error(where+' could not be read ('+repoRes.status+')');
   const mainRef=await fetch(base+'/git/ref/heads/main',{headers:ghHeaders()});
-  if(!mainRef.ok) throw new Error('could not read main branch ('+mainRef.status+')');
+  if(!mainRef.ok) throw new Error('branch ‘'+GH_BRANCH+'’ is missing from '+where+
+    ' and its main branch could not be read to fork from ('+mainRef.status+')');
   const mainSha=(await mainRef.json()).object.sha;
   const created=await fetch(base+'/git/refs',{method:'POST',headers:ghHeaders(),
     body:JSON.stringify({ref:'refs/heads/'+GH_BRANCH, sha:mainSha})});
-  if(!created.ok&&created.status!==422) throw new Error('could not create data branch ('+created.status+')');
+  if(!created.ok&&created.status!==422)
+    throw new Error('could not create branch ‘'+GH_BRANCH+'’ on '+where+' ('+created.status+')');
   ghBranchReady=true; return true;
 }
 async function ghFetchFile(){
@@ -721,21 +796,47 @@ async function ghFetchFile(){
   ghSha=j.sha;
   return b64ToUtf8(j.content);
 }
-async function ghPull(){
-  if(!ghConfigured()) return null;
+/* three genuinely different outcomes, and collapsing them into one nullable return is what cost
+   the data: 'ok' - parsed state in hand; 'absent' - the file really is not on the branch (a clean
+   404), so a first push is safe; 'error' - anything else (offline, 401, rate limit, 5xx, empty or
+   unparseable body, a version this build can't read), which means the remote file may be perfectly
+   fine and must not be written over on the strength of a failed read. */
+async function ghPullResult(){
+  if(!ghConfigured()) return {status:'absent'};
+  let raw;
   try{
     await ghEnsureBranch();
-    const raw=await ghFetchFile();
-    if(!raw) return null;
-    const obj=JSON.parse(raw);
-    if(!acceptVersion(obj)) return null;
-    ghLastError=null;
-    return obj;
-  }catch(e){ ghLastError=String(e&&e.message||e); return null; }
+    raw=await ghFetchFile();
+  }catch(e){ ghLastError=String(e&&e.message||e); return {status:'error',error:ghLastError}; }
+  if(raw===null||raw===undefined){ ghLastError=null; return {status:'absent'}; }
+  if(!String(raw).trim()){
+    ghLastError='the file on GitHub is empty';
+    return {status:'error',error:ghLastError};
+  }
+  let obj;
+  try{ obj=JSON.parse(raw); }
+  catch(e){ ghLastError='the file on GitHub is not valid JSON'; return {status:'error',error:ghLastError}; }
+  if(!acceptVersion(obj)){
+    ghLastError='the file on GitHub is a version this build cannot read';
+    return {status:'error',error:ghLastError};
+  }
+  ghLastError=null; ghGoodVolume=stateVolume(obj);
+  return {status:'ok',data:obj};
 }
+async function ghPull(){ const r=await ghPullResult(); return r.status==='ok'?r.data:null; }
 async function ghPushNow(opts){
   opts=opts||{};
   if(!ghConfigured()) return;
+  /* the override is consumed here whatever happens next, so a forced push can never leak into
+     the queued/retry pushes that follow it */
+  const forced=ghForceNext; ghForceNext=false;
+  if(ghReadOnly&&!forced){
+    ghLastError='sync paused — GitHub could not be read on this load'; renderSyncLine(); return;
+  }
+  if(!forced){
+    const why=wipeVerdict(ghGoodVolume,S);
+    if(why){ ghLastError='push blocked: '+why; renderSyncLine(); return; }
+  }
   if(ghPushInFlight){ ghPushQueued=true; return; }
   ghPushInFlight=true; ghSyncing=true; renderSyncLine();
   try{
@@ -746,14 +847,25 @@ async function ghPushNow(opts){
     const url='https://api.github.com/repos/'+GH_OWNER+'/'+GH_REPO+'/contents/'+GH_PATH;
     let r=await fetch(url,{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body),keepalive:!!opts.keepalive});
     if(r.status===409){
-      /* another tab or device pushed since we last read the sha - refetch once and retry */
-      await ghFetchFile();
+      /* another tab or device pushed since we last read the sha - refetch once and retry. Re-run
+         the wipe check against what is actually on the branch now: "someone else pushed newer
+         data" is exactly the moment a stale in-memory state is most likely to be the smaller one,
+         and the old code resolved the conflict by handing that stale state the winning sha. */
+      const fresh=await ghFetchFile();
+      if(fresh&&!forced){
+        let remoteVol=-1;
+        try{ remoteVol=stateVolume(JSON.parse(fresh)); }catch(e){ /* unreadable - keep the old mark */ }
+        if(remoteVol>0&&remoteVol>ghGoodVolume) ghGoodVolume=remoteVol;
+        const why=wipeVerdict(ghGoodVolume,S);
+        if(why) throw new Error('push blocked: '+why);
+      }
       body.sha=ghSha;
       r=await fetch(url,{method:'PUT',headers:ghHeaders(),body:JSON.stringify(body),keepalive:!!opts.keepalive});
     }
     if(!r.ok) throw new Error('push failed ('+r.status+')');
     const j=await r.json();
     ghSha=(j.content&&j.content.sha)||ghSha;
+    ghGoodVolume=stateVolume(S);
     ghLastSyncAt=Date.now(); ghLastError=null;
   }catch(e){ ghLastError=String(e&&e.message||e); }
   finally{
@@ -764,6 +876,9 @@ async function ghPushNow(opts){
 }
 function scheduleGhPush(){
   if(!ghConfigured()) return;
+  /* nothing can be written while paused, so don't arm a timer for it — an armed timer is also
+     what makes beforeunload nag, and "don't close this tab" is a lie when no push is coming */
+  if(ghReadOnly){ renderSyncLine(); return; }
   if(ghSaveTimer) clearTimeout(ghSaveTimer);
   ghSaveTimer=setTimeout(function(){ ghSaveTimer=null; ghPushNow(); },GH_PUSH_DEBOUNCE_MS);
   renderSyncLine();
@@ -794,6 +909,12 @@ function ghTimeAgo(ts){
 function ghStatusText(){
   if(!ghConfigured()) return '';
   if(ghSyncing) return 'syncing…';
+  /* the paused states outrank "unsynced changes": if nothing can be written, saying the tab just
+     needs a moment is the wrong story to tell */
+  if(ghReadOnly) return 'sync paused — GitHub could not be read'+(ghLastError?(' ('+ghLastError+')'):'')+
+    '. Use “load latest from GitHub” to retry.';
+  if(ghLastError&&ghLastError.indexOf('push blocked')===0)
+    return ghLastError+'. Nothing was written — “load latest from GitHub” to retry.';
   if(ghSaveTimer) return 'unsynced changes — don’t close this tab yet';
   if(ghLastError) return 'sync error: '+ghLastError;
   if(ghLastSyncAt) return 'synced '+ghTimeAgo(ghLastSyncAt);
@@ -813,9 +934,13 @@ function ghSyncPanelHtml(){
       '<div style="display:flex;gap:8px"><button class="btn tiny" onclick="submitGhToken()">connect</button>'+
       '<button class="btn tiny ghost" onclick="toggleEdit(null)">cancel</button></div></div>';
   }
+  const stuck=ghReadOnly||(ghLastError&&ghLastError.indexOf('push blocked')===0);
   return '<div class="restorewarn"><span>Synced to '+GH_OWNER+'/'+GH_REPO+' · branch ‘'+GH_BRANCH+'’ · '+GH_PATH+'. '+ghStatusText()+'</span>'+
-    '<div style="display:flex;gap:8px"><button class="btn tiny" onclick="ghPushNow()">sync now</button>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn tiny" onclick="ghPushNow()">sync now</button>'+
     '<button class="btn tiny" onclick="ghPullNowManual()">load latest from GitHub</button>'+
+    /* only offered once the guard has actually stopped something, so the normal path never
+       presents a one-click way to overwrite everything */
+    (stuck?'<button class="btn tiny" onclick="ghForcePush()">push this device anyway…</button>':'')+
     '<button class="btn tiny ghost" onclick="ghDisconnect()">disconnect</button>'+
     '<button class="btn tiny ghost" onclick="toggleEdit(null)">close</button></div></div>';
 }
@@ -832,22 +957,46 @@ async function submitGhToken(){
   ghSetToken(t); toggleEdit(null);
   try{ localStorage.setItem(GH_PRECONNECT_BACKUP_KEY,JSON.stringify(S)); }catch(e){}
   toast('Connecting…');
-  const remote=await ghPull();
-  if(remote){
-    adoptState(remote);
+  const res=await ghPullResult();
+  if(res.status==='ok'){
+    ghReadOnly=false;
+    adoptState(res.data);
     toast('Connected — loaded your existing data from GitHub');
-  } else {
+  } else if(res.status==='absent'){
+    /* only a clean 404 earns "this device is the starting point" — on an error the branch may
+       already hold everything, and pushing this browser's state would be the wipe */
     ghPushNow();
     toast('Connected — this device is now the starting point');
+  } else {
+    ghReadOnly=true; renderSyncLine();
+    toast('Connected, but GitHub could not be read: '+(res.error||'unknown')+' — sync paused');
   }
 }
 function ghDisconnect(){ ghSetToken(''); toggleEdit(null); toast('GitHub sync disconnected'); }
 async function ghPullNowManual(){
   toast('Loading latest from GitHub…');
-  const remote=await ghPull();
-  if(!remote){ toast(ghLastError?('Could not load: '+ghLastError):'No synced data found yet'); renderSyncLine(); return; }
-  adoptState(remote);
-  toast('Loaded latest from GitHub');
+  const res=await ghPullResult();
+  if(res.status==='ok'){
+    /* a good read is the only thing that clears the latch — sync resumes from real data */
+    ghReadOnly=false;
+    adoptState(res.data);
+    toast('Loaded latest from GitHub'); renderSyncLine(); return;
+  }
+  if(res.status==='absent'){ toast('No synced data found yet'); renderSyncLine(); return; }
+  ghReadOnly=true;
+  toast('Could not load: '+(res.error||'unknown'));
+  renderSyncLine();
+}
+/* the deliberate way out, for the two cases the guard can't tell apart from a wipe: genuinely
+   starting over, and a device whose local state is the only good copy left. Both are real, both
+   are rare, and neither should be reachable without saying so out loud. */
+function ghForcePush(){
+  const v=stateVolume(S);
+  if(!confirm('Replace the copy on GitHub with what this device has right now?\n\n'+
+    'This device is holding '+v+' record'+(v===1?'':'s')+
+    ', and whatever is stored on GitHub will be overwritten.')) return;
+  ghForceNext=true; ghReadOnly=false;
+  ghPushNow();
 }
 function makeUnit(o){
   return Object.assign({id:'u'+Date.now()+Math.floor(Math.random()*100000), text:'', kind:'task',
@@ -1042,8 +1191,22 @@ async function load(){
      saved in this browser, the repo's data branch is the durable store, so try it before ever
      falling back to the old v3 key or a blank state */
   if(ghConfigured()){
-    const remote=await ghPull();
-    if(remote){ S=remote; await snapshotBeforeUnify(); reportHeal(hydrateState()); save(); return; }
+    const res=await ghPullResult();
+    if(res.status==='ok'){ S=res.data; await snapshotBeforeUnify(); reportHeal(hydrateState()); save(); return; }
+    if(res.status==='error'){
+      /* the whole data-loss bug lived in this branch. Falling through from a *failed* read to
+         blankState() and then reaching the save() at the bottom of load() is what pushed an empty
+         file over good data. Come up blank but latched read-only instead: the page is usable and
+         the error is on screen, and nothing this session does can reach GitHub until a pull
+         succeeds (or the override in the sync panel is used deliberately). */
+      S=blankState(); ghReadOnly=true; hydrateState();
+      setTimeout(function(){
+        toast('Could not load from GitHub — sync paused so nothing gets overwritten');
+        renderSyncLine();
+      },400);
+      return;
+    }
+    /* 'absent' - the branch genuinely has no file yet, so a blank start is the right answer */
   }
   let oldRaw=null;
   if(storageAvailable()){
