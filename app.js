@@ -12,7 +12,21 @@ const DAY_START=360, DAY_END=1320; /* 6:00am – 10:00pm skeleton */
    card just to see the whole day — so phone widths get a smaller ratio instead, computed live
    (not a frozen const) so it tracks orientation changes. Every consumer of the ratio goes
    through gridPxPerMin()/gridTotalPx() rather than reading a fixed number directly. */
-function gridPxPerMin(){ return (typeof window!=='undefined'&&window.innerWidth<=760)?0.5:0.95; }
+/* On the desktop the ratio is derived from the viewport instead of fixed, so the stretch of day
+   you are actually in fills the pane: DESK_ACTIVE_WINDOW minutes are sized to the visible height,
+   and the rest of the 6am-10pm skeleton stays reachable by scrolling. Fitting the *whole* day
+   instead would put a 30-minute block at about 13px - too short for a label, let alone the task
+   rows and play buttons that now live inside one. Clamped at both ends so a very short viewport
+   can't crush the blocks and a very tall one can't stretch them into slabs. */
+const DESK_ACTIVE_WINDOW=8*60;
+function gridPxPerMin(){
+  if(typeof window==='undefined') return 0.95;
+  if(window.innerWidth<=760) return 0.5;
+  if(window.innerWidth<=900) return 0.95;
+  /* keep in step with the .timeline max-height in the desktop media query */
+  const avail=window.innerHeight-250;
+  return Math.max(0.6,Math.min(1.7,avail/DESK_ACTIVE_WINDOW));
+}
 function gridTotalPx(){ return Math.round((DAY_END-DAY_START)*gridPxPerMin()); }
 function minToPx(min){ return Math.round((min-DAY_START)*gridPxPerMin()); }
 const DEFAULT_CATEGORIES=['home','research','admin','self-care','hobbies','school'];
@@ -453,7 +467,18 @@ function applyLayoutDom(){
     col.forEach(function(id){ const el=document.getElementById(id); if(el) colEl.appendChild(el); });
   });
   renderDropZones();
+  /* this function's whole job is to put every card back where S.layout.cols says it belongs,
+     which on the desktop drags the timeline and the inbox straight back out of the panes
+     syncDeskDay just put them in. It runs after render() at boot and after any card reorder, so
+     re-asserting here is what keeps the two in agreement rather than racing.
+     The guard is because the reverse call exists too: syncDeskDay re-runs this function when it
+     hands the cards back at the breakpoint, and without it the two would call each other. */
+  if(applyingLayout) return;
+  applyingLayout=true;
+  try{ syncDeskDay(); syncDeskPanel(); }
+  finally{ applyingLayout=false; }
 }
+let applyingLayout=false;
 /* explicit insertion-line drop targets: one above the first card, one between every pair, one
    below the last — so you can place a dragged card at an exact spot instead of only being able
    to drop "onto" another card. An empty column still gets its lone zone (index 0), which fills
@@ -1051,6 +1076,94 @@ function ghForcePush(){
     ', and whatever is stored on GitHub will be overwritten.')) return;
   ghForceNext=true; ghReadOnly=false;
   ghPushNow();
+}
+/* ===================== notifications =====================
+   What this can and cannot do, because the ceiling is set by where the app is hosted rather than
+   by this code: the page is static, so there is no server to send Web Push from, and without one
+   nothing can reach you while the app is fully closed. What does work is everything that fires
+   while the page is alive - open in a tab on the desktop, or open/recently-backgrounded as an
+   installed PWA on a phone. That covers the cases worth having: a block about to start, a block
+   starting, and a block ending and handing its unfinished tasks back.
+   Going through the service worker registration when there is one (rather than `new
+   Notification`) is what makes it work on Android and on an installed iOS PWA - constructing a
+   Notification directly throws on those. Desktop browsers accept either, so the SW path is the
+   only one wired up, with the constructor as the fallback.
+   Permission is never requested on load. An unprompted permission dialog is the thing browsers
+   now punish with a permanent block, so it is asked for from a button (enableNotifications), on
+   a real click. */
+let notifyReady=false, swReg=null;
+const NOTIFY_SEEN_KEY='aura_notify_seen';
+let notifySeen={};
+try{ notifySeen=JSON.parse(localStorage.getItem(NOTIFY_SEEN_KEY)||'{}')||{}; }catch(e){ notifySeen={}; }
+function notifySupported(){ return typeof Notification!=='undefined'; }
+function notifyPermission(){ return notifySupported()?Notification.permission:'unsupported'; }
+async function registerServiceWorker(){
+  if(!('serviceWorker' in navigator)) return null;
+  try{
+    /* scope-relative so it works on a project Pages site (/focus/) as well as a root domain */
+    swReg=await navigator.serviceWorker.register('sw.js');
+    return swReg;
+  }catch(e){ return null; }
+}
+async function enableNotifications(){
+  if(!notifySupported()){ toast('This browser can’t show notifications'); return; }
+  if(Notification.permission==='denied'){
+    toast('Notifications are blocked — turn them back on in your browser’s site settings');
+    return;
+  }
+  const res=await Notification.requestPermission();
+  if(res==='granted'){
+    notifyReady=true;
+    notifyUser('Notifications on', 'You’ll hear about blocks starting and ending.');
+    toast('Notifications enabled');
+  } else {
+    toast('Notifications not enabled');
+  }
+  render();
+}
+function notifyUser(title,body,tag){
+  /* always mirror to the in-app toast: the tab you are looking at should not stay silent just
+     because permission was never granted, and a toast is the only channel that always works */
+  toast(title);
+  if(!notifySupported()||Notification.permission!=='granted') return;
+  const opts={body:body||'', icon:'favicon.png', badge:'favicon.png',
+    tag:tag||('prism-'+Date.now()), renotify:false};
+  try{
+    if(swReg&&swReg.showNotification){ swReg.showNotification(title,opts); return; }
+    new Notification(title,opts);
+  }catch(e){ /* the toast already fired, so a failure here is not worth surfacing */ }
+}
+/* fires each alert at most once per day per block, surviving reloads. Keyed by day so the store
+   stays small and yesterday's keys are dropped rather than accumulating forever. */
+function notifyOnce(key,title,body){
+  const k=today()+'|'+key;
+  /* re-read rather than trusting the in-memory copy, so a second tab doesn't re-fire an alert
+     the first one already showed */
+  let stored={};
+  try{ stored=JSON.parse(localStorage.getItem(NOTIFY_SEEN_KEY)||'{}')||{}; }catch(e){ stored={}; }
+  if(stored[k]||notifySeen[k]) return false;
+  stored[k]=1;
+  /* drop everything that isn't today's, so this never grows without bound */
+  Object.keys(stored).forEach(function(x){ if(x.indexOf(today()+'|')!==0) delete stored[x]; });
+  notifySeen=stored;
+  try{ localStorage.setItem(NOTIFY_SEEN_KEY,JSON.stringify(stored)); }catch(e){}
+  notifyUser(title,body,key);
+  return true;
+}
+/* the minute hand: what is about to start, what just started. Block *endings* are announced by
+   sweepEndedBlocks instead, since that is where the consequences actually happen. */
+function checkBlockAlerts(){
+  if(notifyPermission()!=='granted') return;
+  const k=today(), d=S.days[k];
+  if(!d||!d.blocks) return;
+  const nm=nowMinutes()%1440;
+  d.blocks.forEach(function(b){
+    if(isEmptyBlock(b)) return;
+    const s=toMin(b.start), label=b.focus||b.calTitle||'Untitled block';
+    const lead=s-nm;
+    if(lead===5) notifyOnce('soon-'+b.id,'Starting in 5 minutes',label+' at '+b.start);
+    if(lead===0) notifyOnce('now-'+b.id,'Block starting now',label+' · '+b.start+'–'+(b.end||''));
+  });
 }
 function makeUnit(o){
   return Object.assign({id:'u'+Date.now()+Math.floor(Math.random()*100000), text:'', kind:'task',
@@ -2053,6 +2166,12 @@ function isPhone(){ return typeof window!=='undefined'&&window.innerWidth<=760; 
 function openBlockId(){
   if(panelOverride!==undefined) return panelOverride||null;
   if(isPhone()) return null;
+  /* The panel used to spring open on the current block by default, which made sense when nothing
+     else on screen said what you were meant to be doing. The desktop now leads with the focus
+     card - same block, same tasks, same play button, and it doesn't cover anything. Opening a
+     fixed drawer over the inbox to repeat it is just something to close, so on the desktop the
+     panel is opened by clicking a block and not before. */
+  if(isDesktopLayout()) return null;
   const d=day(vday());
   const curB=(d.blocks||[]).filter(function(b){return isCurrentBlock(b);})[0];
   return curB?curB.id:null;
@@ -2287,6 +2406,23 @@ function assignTaskToBlock(id,blockId){
   const t=taskById(id); if(!t||t.day!==vday()) return; /* a task can only pin to a block on its own day */
   t.blockId=blockId; t.bucket='day'; save(); render(); toast('Pinned to block');
 }
+/* the week grid drops onto days other than the one being viewed, so the day moves with the pin -
+   a task pinned to Thursday's 2pm block belongs to Thursday. assignTaskToBlock keeps its stricter
+   same-day rule because in the day view a cross-day pin would only ever be a mistake. */
+function assignTaskToBlockOnDay(id,blockId,dayKey){
+  const t=taskById(id); if(!t) return;
+  t.day=dayKey; t.blockId=blockId; t.bucket='day';
+  save(); render();
+  toast('Pinned to '+dayKey.slice(5)+' block');
+}
+function onWeekBlockDrop(ev,dayKey,blockId){
+  ev.preventDefault(); ev.stopPropagation();
+  ev.currentTarget.classList.remove('drophover');
+  const taskId=ev.dataTransfer.getData('text/task');
+  if(taskId){ assignTaskToBlockOnDay(taskId,blockId,dayKey); return; }
+  const qid=ev.dataTransfer.getData('text/plain');
+  if(qid){ setViewDay(dayKey); assignQuest(qid,blockId); }
+}
 /* Pull an existing bank task straight into a block. assignTaskToBlock() alone can't do this: it
    guards on the task already being on the block's day, which a bank task never is. This sets the
    day and the block together, which is what "pull it in from the bank" actually means.
@@ -2435,8 +2571,9 @@ function wgEmptyTap(dayKey,ev){
   const host=ev.currentTarget;
   const r=host.getBoundingClientRect();
   const y=(ev.clientY!==undefined?ev.clientY:0)-r.top;
-  let m=DAY_START+Math.round((y/WG_PX_PER_MIN)/30)*30;
-  m=Math.max(DAY_START,Math.min(DAY_END-30,m));
+  /* same 15-minute grid the day view uses, so a block made here lines up with one made there */
+  let m=DAY_START+floor15(y/WG_PX_PER_MIN);
+  m=Math.max(DAY_START,Math.min(DAY_END-15,m));
   if(pickedTaskId){ toast('Pick a block, not empty space'); return; }
   createBlockOnDay(dayKey,fromMin(m));
 }
@@ -2451,7 +2588,13 @@ function wgOpenBlock(dayKey,blockId,ev){
   }
   weekGridOpen=false; setViewDay(dayKey); panelOverride=blockId; render();
 }
+/* The week calendar has two homes: the phone's full-screen overlay (#weekGrid, opened from the
+   day rail) and the week tab on the desktop (#weekCal), where it is the main event rather than
+   something you open on top of things. Same markup, same handlers, one implementation - the only
+   difference is the chrome around it, which is why the head/foot are parameterised instead of
+   the grid being rebuilt for each. */
 function renderWeekGrid(){
+  renderWeekCalInto('weekCal');
   const host=document.getElementById('weekGrid');
   if(!host) return;
   if(!weekGridOpen){ host.style.display='none'; host.innerHTML=''; return; }
@@ -2471,9 +2614,14 @@ function renderWeekGrid(){
       const en=Math.min(DAY_END,toMin(b.end||fromMin(toMin(b.start)+60)));
       const col=blockColor(b);
       const label=String(b.focus||b.calTitle||'').replace(/</g,'&lt;');
-      boxes+='<div class="wgblk'+(pickedTaskId?' armed':'')+'" style="top:'+wgTop(st)+'px;height:'+Math.max(14,wgTop(en)-wgTop(st))+'px;'+
+      const wsettled=isBlockSettled(b,k);
+      boxes+='<div class="wgblk'+(pickedTaskId?' armed':'')+(wsettled?' settled':'')+'" '+
+        'style="top:'+wgTop(st)+'px;height:'+Math.max(14,wgTop(en)-wgTop(st))+'px;'+
         'background:'+col.bg+';border-color:'+col.edge+'" onclick="wgOpenBlock(\''+k+'\',\''+b.id+'\',event)" '+
+        'ondragover="onBlockDragOver(event,this)" ondragleave="onBlockDragLeave(event,this)" '+
+        'ondrop="onWeekBlockDrop(event,\''+k+'\',\''+b.id+'\')" '+
         'title="'+b.start+'–'+(b.end||'')+' '+label+'">'+
+        (wsettled?'<span class="wgchk">✓</span>':'')+
         '<span class="wgt">'+label+'</span></div>';
     });
     cols+='<div class="wgcol'+(k===tk?' today':'')+(k===vday()?' sel':'')+'">'+
@@ -2482,6 +2630,7 @@ function renderWeekGrid(){
       '<div class="wgbody" style="height:'+height+'px" onclick="wgEmptyTap(\''+k+'\',event)">'+boxes+'</div>'+
       '</div>';
   });
+  weekCalCache={axis:axis, cols:cols, height:height, days:days};
   host.innerHTML=
     '<div class="wghead"><div><div class="wgttl">WEEK GRID</div>'+
       '<div class="wgrange">'+days[0].slice(5)+' – '+days[6].slice(5)+'</div></div>'+
@@ -2493,6 +2642,66 @@ function renderWeekGrid(){
     '</div>'+
     '<div class="wgfoot">'+(pickedTaskId?'tap a block to place the picked task':'tap empty space to add a block · tap a block to open it')+'</div>'+
     '</div>';
+}
+let weekCalCache=null;
+/* the week tab's copy: no overlay chrome, and it renders whether or not the overlay is open */
+function renderWeekCalInto(hostId){
+  const host=document.getElementById(hostId);
+  if(!host) return;
+  if(viewMode!=='planning'){ host.innerHTML=''; return; }
+  const days=weekGridDays(), tk=today();
+  const L=['S','M','T','W','T','F','S'];
+  const height=wgTop(DAY_END);
+  let axis='';
+  /* 12-hour marks: "6a" fits the narrow axis where "06:00" was clipped to ":00", and unlike a
+     bare 2-digit hour it still distinguishes morning from evening */
+  for(let m=DAY_START;m<=DAY_END;m+=60){
+    const h=Math.floor(m/60)%24;
+    axis+='<span class="wgh" style="top:'+wgTop(m)+'px">'+((h%12)||12)+(h<12?'a':'p')+'</span>';
+  }
+  let cols='';
+  days.forEach(function(k){
+    const p=k.split('-').map(Number), dt=new Date(p[0],p[1]-1,p[2]);
+    const dd=S.days[k];
+    const blocks=((dd&&dd.blocks)||[]).filter(function(b){ return !isUnassignedBlock(b); });
+    const lanes=layoutLanes(blocks);
+    let boxes='';
+    blocks.forEach(function(b){
+      const st=Math.max(DAY_START,toMin(b.start));
+      const en=Math.min(DAY_END,toMin(b.end||fromMin(toMin(b.start)+60)));
+      const col=blockColor(b);
+      const label=String(b.focus||b.calTitle||'').replace(/</g,'&lt;');
+      const ln=lanes[b.id]||{lane:0,lanes:1}, w=100/Math.max(1,ln.lanes);
+      const settled=isBlockSettled(b,k);
+      const n=blockAllTasks(b,k).length;
+      boxes+='<div class="wgblk'+(settled?' settled':'')+'" '+
+        'style="top:'+wgTop(st)+'px;height:'+Math.max(15,wgTop(en)-wgTop(st))+'px;'+
+        'left:calc('+(ln.lane*w).toFixed(3)+'% + 1px);width:calc('+w.toFixed(3)+'% - 2px);'+
+        'background:'+col.bg+';border-color:'+col.edge+'" '+
+        'onclick="wgOpenBlock(\''+k+'\',\''+b.id+'\',event)" '+
+        'ondragover="onBlockDragOver(event,this)" ondragleave="onBlockDragLeave(event,this)" '+
+        'ondrop="onWeekBlockDrop(event,\''+k+'\',\''+b.id+'\')" '+
+        'title="'+b.start+'–'+(b.end||'')+' '+label+'">'+
+        (settled?'<span class="wgchk">✓</span>':'')+
+        '<span class="wgt">'+label+'</span>'+
+        (n?'<span class="wgn2">'+n+'</span>':'')+'</div>';
+    });
+    cols+='<div class="wgcol'+(k===tk?' today':'')+(k===vday()?' sel':'')+'">'+
+      '<div class="wgcolhead" onclick="setViewDay(\''+k+'\')"><span class="wgl">'+L[dt.getDay()]+'</span>'+
+      '<span class="wgn">'+dt.getDate()+'</span>'+
+      '<span class="wgs">'+Math.round(dayScore(k)*100)+'</span></div>'+
+      '<div class="wgbody" style="height:'+height+'px" onclick="wgEmptyTap(\''+k+'\',event)">'+boxes+'</div>'+
+      '</div>';
+  });
+  host.innerHTML=
+    '<div class="wcbar"><div class="wcttl">week of '+days[0].slice(5)+' – '+days[6].slice(5)+'</div>'+
+      '<div class="wcnav"><button onclick="shiftViewDay(-7)">← prev</button>'+
+      '<button onclick="goToday()">this week</button>'+
+      '<button onclick="shiftViewDay(7)">next →</button></div></div>'+
+    '<div class="wchint">click empty time to add a 15-minute block · drag a task from the bank onto a block to pin it</div>'+
+    '<div class="wcscroll"><div class="wggrid">'+
+      '<div class="wgaxis" style="height:'+height+'px">'+axis+'</div>'+cols+
+    '</div></div>';
 }
 /* ===================== planning: the sticky week banner =====================
    Seven days pinned above the task bank. With nothing picked, tapping a day opens that day's list
@@ -2791,8 +3000,13 @@ function fromMin(m){ m=((m%1440)+1440)%1440; return String(Math.floor(m/60)).pad
 function blockDur(b){ let e=toMin(b.end||fromMin(toMin(b.start)+60)), s=toMin(b.start); if(e<=s)e+=1440; return e-s; }
 function overlaps(s1,e1,s2,e2){ return s1<e2&&s2<e1; }
 function isCurrentBlock(b){ if(!isViewingToday()) return false; const nm=nowMinutes()%1440; const s=toMin(b.start); let e=s+blockDur(b); return nm>=s&&nm<e; }
-function isPastBlock(b){
-  const rel=daysBetween(today(),vday());
+function isPastBlock(b){ return isPastBlockOn(b,vday()); }
+/* the same question, but about a stated day rather than the one on screen. The week grid draws
+   seven days at once, and asking isPastBlock() there measured every one of them against the
+   viewed day's clock - so on a Monday afternoon, Thursday morning's blocks came back "past" and
+   the whole rest of the week rendered ticked off and struck through. */
+function isPastBlockOn(b,k){
+  const rel=daysBetween(today(),k||vday());
   if(rel>0) return false;  /* a future day hasn't happened yet */
   if(rel<0) return true;   /* a past day is entirely behind us */
   const nm=nowMinutes()%1440; const s=toMin(b.start); const e=s+blockDur(b); return e<=nm;
@@ -2816,6 +3030,78 @@ function isBlockCleared(b){
   const total=quests.length+btasks.length;
   const done=quests.filter(function(q){return itemDone(q);}).length+btasks.filter(function(t){return itemDone(t);}).length;
   return done===total; /* no tasks/quests at all still counts as cleared, once the time has passed */
+}
+/* every task actually pinned to this block for the day, rituals/quests included, as one list.
+   blockQuests and blockTasksFor deliberately cover different halves (see the comment on
+   blockQuests) and nearly every caller wants both, so the union lives here rather than being
+   re-derived at each call site. */
+function blockAllTasks(b,k){
+  k=k||vday();
+  /* blockQuests reads the viewed day internally, so it only speaks for the day on screen - for
+     any other day the pinned-task half is the honest answer on its own */
+  return (k===vday()?blockQuests(b):[]).concat(blockTasksFor(b,k));
+}
+/* "everything in here is done", independent of whether the time has passed - isBlockCleared()
+   answers the narrower "past AND done" question and is kept as-is because the rollup grouping
+   relies on that meaning. */
+function isBlockFinished(b,k){
+  const all=blockAllTasks(b,k);
+  if(!all.length) return false;   /* an empty block isn't an accomplishment */
+  return all.every(function(t){ return itemDone(t,k); });
+}
+/* a block is settled once its time is up or its work is done - this is what earns the tick and
+   the strike-through on the label */
+function isBlockSettled(b,k){ return isPastBlockOn(b,k||vday())||isBlockFinished(b,k); }
+/* ---------- when a block's time runs out ----------
+   A block is a commitment to a stretch of clock time, so when that time is gone the block is
+   over whether or not the work inside it happened. Three consequences, all here so they can
+   never drift apart:
+     1. anything still unchecked goes back to the day's inbox. Leaving it pinned to a block that
+        has already ended hides it - the block rolls up into the "earlier today" summary and the
+        task silently goes with it. Only the pin is cleared; t.day stays, so it lands in the
+        inbox for the same day rather than disappearing into the bank.
+     2. a running timer is stopped, not discarded. stopTimer() folds the elapsed seconds into
+        t.elapsed and files the session, so the time already spent is kept - it just stops
+        accruing against a block that no longer exists in the present.
+     3. a focus session locked to that block ends. Staying "engaged" on a block whose window has
+        closed is the state that made it possible to sit in a focus overlay for an hour after
+        the thing was over.
+   Rituals and quests are deliberately left alone: they aren't pinned by t.blockId, they belong
+   to their routine, and unpinning them would mean rewriting placement history. */
+function sweepEndedBlocks(k){
+  k=k||today();
+  if(k!==today()) return 0;        /* only ever sweeps the live day */
+  const d=S.days[k]; if(!d||!d.blocks) return 0;
+  const nm=nowMinutes()%1440;
+  let returned=0, names=[];
+  d.blocks.forEach(function(b){
+    const end=toMin(b.start)+blockDur(b);
+    if(end>nm) return;             /* still running, or yet to start */
+    blockTasksFor(b,k).forEach(function(t){
+      if(itemDone(t,k)) return;
+      if(t.timerStart) stopTimer(t,k);
+      t.blockId=null;
+      returned++;
+      if(names.length<3) names.push(t.text);
+    });
+  });
+  /* a locked-in session outlives its block only until the next tick, by design - the check is
+     here rather than in focusTick so it also fires on a plain render after the tab wakes up */
+  if(focusBlockId){
+    const fb=blockOf(focusBlockId);
+    if(!fb||toMin(fb.start)+blockDur(fb)<=nm){
+      const label=fb?(fb.focus||'that block'):'that block';
+      exitFocus();
+      notifyUser('Block ended', label+' is over — focus session closed.');
+    }
+  }
+  if(returned){
+    save();
+    notifyUser(
+      returned+' task'+(returned===1?'':'s')+' back in your inbox',
+      names.join(', ')+(returned>names.length?' and '+(returned-names.length)+' more':''));
+  }
+  return returned;
 }
 function nextBlockId(id){
   const d=day(vday());
@@ -3945,7 +4231,274 @@ function renderPrismShell(){
     '</div>';
   renderSheets();
 }
-/* ===================== tracker sheets ===================== */
+/* one task inside a block, wherever a block shows its contents: the focus card at the top of the
+   desktop, and the block detail panel. Checkbox, a play button that runs that task's own timer,
+   and its subtasks nested underneath. The play button is the same toggleTaskTimerBank the bank
+   rows use, so a task timed from inside a block and one timed from the inbox are the same timer
+   with the same history - not two ideas of "how long did this take". */
+function blockTaskRowHTML(t,k,opts){
+  opts=opts||{};
+  const dn=itemDone(t,k), running=!!t.timerStart, el=taskElapsed(t);
+  const subs=subtasksOf(t);
+  return '<div class="btrow'+(dn?' done':'')+(running?' running':'')+'">'+
+    '<button class="btbox" onclick="toggleUnit(\''+t.id+'\',event)" title="'+(dn?'mark not done':'mark done')+'">'+(dn?'✓':'')+'</button>'+
+    '<span class="bttext"'+(opts.draggable?' draggable="true" ondragstart="onTaskDragStart(event,\''+t.id+'\')"':'')+'>'+
+      String(t.text).replace(/</g,'&lt;')+'</span>'+
+    (el?'<span class="btel" data-timer-live-task="'+t.id+'">'+mmss(el)+'</span>':'')+
+    '<button class="btplay'+(running?' on':'')+'" onclick="toggleTaskTimerBank(\''+t.id+'\',event)" '+
+      'title="'+(running?'pause this task':'start timing this task')+'">'+(running?'❚❚':'▶')+'</button>'+
+    (subs.length?'<div class="btsubs">'+subs.map(function(s){
+      const sdn=itemDone(s,k);
+      return '<div class="btsub'+(sdn?' done':'')+'">'+
+        '<button class="btbox sm" onclick="toggleUnit(\''+s.id+'\',event)">'+(sdn?'✓':'')+'</button>'+
+        '<span class="bttext">'+String(s.text).replace(/</g,'&lt;')+'</span>'+
+        '<button class="btplay sm'+(s.timerStart?' on':'')+'" onclick="toggleTaskTimerBank(\''+s.id+'\',event)">'+(s.timerStart?'❚❚':'▶')+'</button>'+
+        '</div>';
+    }).join('')+'</div>':'')+
+    '</div>';
+}
+/* the current block, pinned above the timeline on the desktop. Same idea as the phone's priority
+   card (renderPrismFocus) but with room to show the tasks properly rather than as a bare list -
+   each one checkable, timeable and expanded to its subtasks. */
+function renderDeskFocus(){
+  const host=document.getElementById('deskFocus');
+  if(!host) return;
+  if(!isViewingToday()||viewMode!=='today'){ host.innerHTML=''; host.classList.remove('has'); return; }
+  const d=day(vday());
+  const b=(d.blocks||[]).filter(function(x){ return isCurrentBlock(x)&&!isEmptyBlock(x); })[0];
+  if(!b){
+    /* nothing scheduled right now is worth saying out loud rather than leaving a gap */
+    const nxt=(d.blocks||[]).filter(function(x){ return !isEmptyBlock(x)&&toMin(x.start)>nowMinutes()%1440; })
+      .sort(function(a,c){ return toMin(a.start)-toMin(c.start); })[0];
+    host.classList.add('has');
+    host.innerHTML='<div class="dfcard empty"><div class="dfnow">nothing scheduled right now</div>'+
+      (nxt?'<div class="dfnext">next up · <b>'+String(nxt.focus||'untitled').replace(/</g,'&lt;')+'</b> at '+nxt.start+'</div>'
+         :'<div class="dfnext">the rest of the day is open — click any empty stretch to make a block</div>')+
+      '</div>';
+    return;
+  }
+  const st=toMin(b.start), dur=blockDur(b), nm=nowMinutes()%1440;
+  const leftMin=Math.max(0,st+dur-nm);
+  const pct=dur?Math.min(1,Math.max(0,(nm-st)/dur)):0;
+  const tasks=blockAllTasks(b,vday());
+  const done=tasks.filter(function(t){ return itemDone(t,vday()); }).length;
+  const locked=focusBlockId===b.id;
+  host.classList.add('has');
+  host.innerHTML=
+    '<div class="dfcard'+(locked?' locked':'')+'">'+
+      '<div class="dfring">'+ringSvg(pct,locked?'var(--pink-deep)':'var(--mint-deep)',42,9)+
+        '<span class="dfmin"><b>'+leftMin+'</b><i>min</i></span></div>'+
+      '<div class="dfmain">'+
+        '<div class="dfk">'+(locked?'locked in':'current focus')+'</div>'+
+        '<div class="dft">'+String(b.focus||b.calTitle||'open block').replace(/</g,'&lt;')+'</div>'+
+        '<div class="dfmeta">'+b.start+'–'+(b.end||'')+(tasks.length?' · '+done+'/'+tasks.length+' done':' · no tasks yet')+'</div>'+
+        (tasks.length?'<div class="dftasks">'+tasks.map(function(t){ return blockTaskRowHTML(t,vday()); }).join('')+'</div>':'')+
+      '</div>'+
+      '<div class="dfbtns">'+
+        '<button class="dfgo'+(locked?' on':'')+'" onclick="'+(locked?'exitFocus()':'lockIn(\''+b.id+'\')')+'" '+
+          'title="'+(locked?'stop the focus session':'start focusing on this block')+'">'+(locked?'❚❚ hold':'▶ focus')+'</button>'+
+        '<button class="dfalt" onclick="toggleBlock(\''+b.id+'\')">open</button>'+
+      '</div>'+
+    '</div>';
+}
+/* ===================== desktop sidebar =====================
+   Replaces the hero header above 900px. The header laid the date, day navigation and a single
+   water bar across the top and left every other tracker to the card grid, which meant most of
+   them were only visible if you scrolled past the timeline. Down the left they are all in view
+   at once, and the full width of the page is free for the thing you actually work in.
+   Three shapes, by how much attention each earns: the date/week header, rings for the things
+   logged many times a day (water, food, money - the same three the phone shows, off the same
+   trackerRings() source), and thin bars for the ones that move once a day or less.
+   Everything here is a read-only summary that opens the real editor as a slide-over. No logging
+   UI is duplicated. */
+function sidebarBars(){
+  const k=vday();
+  const h=habitScore(k);
+  let pagesWk=0; for(let n=0;n<7;n++){ const dd=S.days[shiftKey(k,-n)]; if(dd) pagesWk+=dd.pagesLogged||0; }
+  let mediDays=0; for(let n=0;n<7;n++){ const dd=S.days[shiftKey(k,-n)]; if(dd&&dd.done&&dd.done['medit']) mediDays++; }
+  const moveWk=weekMove();
+  const rows=habitRows();
+  const habitDone=rows.filter(function(r){ return habitDoneOnDay(r.id,k); }).length;
+  return [
+    {key:'habits', sheet:'habits', glyph:'◈', label:'habits',
+     pct:(h===null?0:h), value:rows.length?habitDone+'/'+rows.length:'—', color:'var(--lav-deep)'},
+    {key:'reading', sheet:'reading', glyph:'▤', label:'reading',
+     pct:S.readGoal?Math.min(1,pagesWk/S.readGoal):0, value:pagesWk+'/'+S.readGoal+'p', color:'var(--aqua-deep)'},
+    {key:'medi', sheet:'medi', glyph:'❍', label:'meditation',
+     pct:mediDays/7, value:mediDays+'/7d', color:'var(--mint-deep)'},
+    {key:'exercise', sheet:'exercise', glyph:'⚡', label:'exercise',
+     pct:S.moveGoal?Math.min(1,moveWk/S.moveGoal):0, value:moveWk+'/'+S.moveGoal+'m', color:'var(--pink-deep)'}
+  ];
+}
+function nextPaper(){
+  const open=(S.papers||[]).filter(function(p){ return p.status!=='notes taken'; });
+  /* whatever is furthest along comes up first - something half-read is a smaller commitment than
+     starting a new one, so 'skimmed' outranks 'queued' */
+  const rank={skimmed:0,queued:1};
+  open.sort(function(a,b){
+    const ra=(rank[a.status]===undefined?2:rank[a.status]), rb=(rank[b.status]===undefined?2:rank[b.status]);
+    return ra-rb || (a.createdAt||0)-(b.createdAt||0);
+  });
+  return open[0]||null;
+}
+function renderDeskSidebar(){
+  const host=document.getElementById('deskSidebar');
+  if(!host) return;
+  const k=vday();
+  const p=k.split('-').map(Number), dt=new Date(p[0],p[1]-1,p[2]);
+  const wkStart=new Date(dt); wkStart.setDate(dt.getDate()-dt.getDay());
+  const letters=['S','M','T','W','T','F','S'];
+  let dots='';
+  for(let i=0;i<7;i++){
+    const dd=new Date(wkStart); dd.setDate(wkStart.getDate()+i);
+    const dk=dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0');
+    const sc=dayScore(dk), sel=dk===k, isTdy=dk===today();
+    dots+='<button class="dsdot'+(sel?' on':'')+(isTdy?' istoday':'')+'" onclick="setViewDay(\''+dk+'\')" title="'+dk+'">'+
+      '<span class="rw">'+ringSvg(sc,scoreColor(sc),43,10)+'<span class="face">'+letters[i]+'</span></span>'+
+      '<span class="dnum">'+dd.getDate()+'</span></button>';
+  }
+  const wanted={water:1,food:1,money:1};
+  let rings='';
+  trackerRings().filter(function(r){ return wanted[r.kind]; }).forEach(function(r){
+    rings+='<button class="dsring" onclick="openSheet(\''+r.kind+'\')" title="'+r.kind+'">'+
+      '<span class="rw">'+ringSvg(r.pct,r.color,43,8)+
+      '<span class="gl" style="color:'+r.color+'">'+r.glyph+'</span></span>'+
+      '<span class="vl">'+r.value+'</span></button>';
+  });
+  let bars='';
+  sidebarBars().forEach(function(b){
+    bars+='<button class="dsbar" onclick="openSheet(\''+b.sheet+'\')">'+
+      '<span class="bg" style="color:'+b.color+'">'+b.glyph+'</span>'+
+      '<span class="bmid"><span class="btop"><span class="bl">'+b.label+'</span>'+
+      '<span class="bv">'+b.value+'</span></span>'+
+      '<span class="btrack"><span class="bfill" style="width:'+Math.round(Math.max(0,Math.min(1,b.pct))*100)+'%;background:'+b.color+'"></span></span>'+
+      '</span></button>';
+  });
+  const np=nextPaper();
+  const paper=np?
+    '<button class="dspaper" onclick="openSheet(\'papers\')">'+
+      '<span class="pk">next paper</span>'+
+      '<span class="pt">'+String(np.title).replace(/</g,'&lt;')+'</span>'+
+      '<span class="pstat">'+String(np.status)+'</span></button>'
+    :'<button class="dspaper empty" onclick="openSheet(\'papers\')">'+
+      '<span class="pk">next paper</span><span class="pt">queue is empty</span></button>';
+  const notifState=notifyPermission();
+  host.innerHTML=
+    '<div class="dsinner">'+
+      '<div class="dstop">'+
+        '<div class="dsdate">'+
+          '<div class="dsmo">'+dt.toLocaleDateString(undefined,{month:'short'}).toUpperCase()+'</div>'+
+          '<div class="dsdd">'+dt.getDate()+'</div>'+
+          '<div class="dsdow">'+dt.toLocaleDateString(undefined,{weekday:'long'})+'</div>'+
+        '</div>'+
+        '<div class="dsnav">'+
+          '<button onclick="shiftViewDay(-1)" aria-label="previous day">‹</button>'+
+          '<button class="tdy" onclick="goToday()" title="jump back to today">today</button>'+
+          '<button onclick="shiftViewDay(1)" aria-label="next day">›</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="dsweek">'+dots+'</div>'+
+      '<div class="dsrings">'+rings+'</div>'+
+      '<div class="dsbars">'+bars+'</div>'+
+      paper+
+      '<div class="dsfoot">'+
+        (notifState==='granted'?'<span class="dsok">◉ alerts on</span>':
+         notifState==='denied'?'<span class="dsoff" title="re-enable in your browser’s site settings">◌ alerts blocked</span>':
+         notifState==='unsupported'?'':
+         '<button class="dsnotif" onclick="enableNotifications()">◌ turn on alerts</button>')+
+        '<span class="dssync">'+ghStatusText()+'</span>'+
+      '</div>'+
+    '</div>';
+}
+/* ===================== tracker sheets =====================
+   openSheet drives two presentations of the same thing: the bottom sheet on a phone, and the
+   slide-over on the desktop. The desktop one does not re-implement any of it - for every tracker
+   that already has a card, the card's own DOM node is *moved* into the panel and moved back when
+   it closes. Moving rather than cloning is the whole point: the node keeps its identity, so every
+   getElementById in render() keeps finding it and every inline handler keeps working, with no
+   second copy to keep in sync. Food and notes have no card (they were built as phone sheets), so
+   those two fall through to the sheet markup, restyled for the side. */
+const DESK_PANEL_CARD={
+  water:'waterCard', money:'spendCard', habits:'habitStreakCard', reading:'bookshelfCard',
+  medi:'meditationCard', exercise:'movementCard', papers:'papersCard', quests:'questCard'
+};
+const DESK_PANEL_TITLE={
+  water:'water', money:'spending', habits:'habit streaks', reading:'bookshelf',
+  medi:'meditation', exercise:'movement', papers:'paper queue', quests:'side quests',
+  food:'food', notes:'log'
+};
+/* ---------- borrowing a card's DOM node ----------
+   Which column a card sits in is user state (S.layout.cols, applied by applyLayoutDom), so the
+   desktop layout can't be expressed by hiding columns or by hiding cards by id - the first
+   version of this hid #todayColA and lost the timeline, because that is simply where this user
+   had dragged it. Instead the two nodes the desktop needs are *moved* to where it wants them and
+   moved back below the breakpoint. Moving keeps each node's identity, so every getElementById in
+   render() still finds it and there is never a second copy to keep in sync. */
+let domHomes={};
+function isDesktopLayout(){ return typeof window!=='undefined'&&window.innerWidth>900; }
+function relocateNode(id,host,cls){
+  const node=document.getElementById(id);
+  if(!node||!host||node.parentNode===host) return 0;
+  if(!domHomes[id]) domHomes[id]={parent:node.parentNode, next:node.nextSibling};
+  if(cls) node.classList.add(cls);
+  host.appendChild(node);
+  return 1;
+}
+function restoreNode(id){
+  const node=document.getElementById(id), home=domHomes[id];
+  if(!node||!home){ return; }
+  node.classList.remove('inpanel','indesk');
+  if(home.parent&&home.parent.isConnected){
+    if(home.next&&home.next.parentNode===home.parent) home.parent.insertBefore(node,home.next);
+    else home.parent.appendChild(node);
+  }
+  delete domHomes[id];
+}
+/* the timeline and the inbox, side by side under the focus card */
+function syncDeskDay(){
+  const wrap=document.getElementById('deskDay');
+  if(!wrap) return;
+  const on=isDesktopLayout()&&viewMode==='today';
+  wrap.classList.toggle('on',on);
+  if(!on){
+    const had=['card-day','todayTasksCard'].filter(function(id){ return domHomes[id]; });
+    ['card-day','todayTasksCard'].forEach(restoreNode);
+    /* the recorded home is only a fallback: S.layout.cols is the real answer to where a card
+       belongs, and it can have changed while the card was borrowed. Re-running the layout puts
+       both back in their proper columns instead of leaving them wherever they were picked up. */
+    if(had.length) applyLayoutDom();
+    return;
+  }
+  /* blockDetailPanel is deliberately not moved: it is already position:fixed, a right-hand drawer
+     that works the same on both layouts, and putting it in a column would break that. */
+  const moved=relocateNode('card-day',document.getElementById('deskTimelinePane'),'indesk')
+    |relocateNode('todayTasksCard',document.getElementById('deskInboxPane'),'indesk');
+  /* the timeline only gains its scrollable height once it is in the pane, so the first anchor
+     attempt during render() ran against a container with nothing to scroll */
+  /* moving a node resets its scrollTop, so an anchor that already ran is undone by the move and
+     has to be re-armed - otherwise the once-per-day guard sees the day as already anchored and
+     leaves the timeline sitting at 6am */
+  if(moved){ timelineAnchoredFor=null; scrollTimelineIntoView(document.getElementById('timeline')); }
+}
+function syncDeskPanel(){
+  const panel=document.getElementById('deskPanel');
+  if(!panel) return;
+  const body=document.getElementById('deskPanelBody');
+  const wantCard=isDesktopLayout()&&openSheetKind?DESK_PANEL_CARD[openSheetKind]:null;
+  /* put back anything borrowed by the panel that is no longer wanted, before borrowing the next */
+  Object.keys(DESK_PANEL_CARD).forEach(function(kind){
+    const id=DESK_PANEL_CARD[kind];
+    if(id===wantCard) return;
+    const node=document.getElementById(id);
+    if(node&&node.parentNode===body) restoreNode(id);
+  });
+  const open=isDesktopLayout()&&!!openSheetKind&&(wantCard||openSheetKind==='food'||openSheetKind==='notes');
+  panel.classList.toggle('open',!!open);
+  if(!open) return;
+  const ttl=document.getElementById('deskPanelTitle');
+  if(ttl) ttl.textContent=DESK_PANEL_TITLE[openSheetKind]||openSheetKind;
+  if(wantCard) relocateNode(wantCard,body,'inpanel');
+}
 function openSheet(kind){ openSheetKind=kind; mealDraft=[]; render(); }
 function closeSheet(){ openSheetKind=null; render(); }
 let mealDraft=[];
@@ -3999,12 +4552,18 @@ function sheetHead(title,color){
     '<button onclick="closeSheet()">✕</button></div>';
 }
 function renderSheets(){
+  /* on the desktop these are shown inside the slide-over instead, except food and notes, which
+     have no card of their own and so keep using this markup. The scrim follows the same rule:
+     opening it whenever *any* sheet kind was set meant the phone's full-screen scrim covered the
+     desktop panel and swallowed every click on it, including its own close button. */
+  const asSheet=!!openSheetKind&&(!isDesktopLayout()||openSheetKind==='food'||openSheetKind==='notes');
   const scrim=document.getElementById('sheetScrim');
-  if(scrim) scrim.classList.toggle('open',!!openSheetKind);
+  if(scrim) scrim.classList.toggle('open',asSheet);
   ['Money','Water','Food','Notes'].forEach(function(n){
     const el=document.getElementById('sheet'+n);
-    if(el) el.classList.toggle('open',openSheetKind===n.toLowerCase());
+    if(el) el.classList.toggle('open',openSheetKind===n.toLowerCase()&&asSheet);
   });
+  syncDeskPanel();
   const k=vday(), d=day(k);
   /* --- money --- */
   const mEl=document.getElementById('sheetMoney');
@@ -4266,17 +4825,91 @@ function groupTimelineSegments(blocks){
 }
 let manualRollup={};
 function toggleRollup(id){ manualRollup[id]=!manualRollup[id]; render(); }
+/* ---------- side-by-side lanes for overlapping blocks ----------
+   Every block is positioned absolutely by its clock time, which is what makes the grid
+   proportional, but it also meant two blocks booked over each other were drawn on top of each
+   other: the later one simply hid the earlier one, and there was no way to tell from the
+   timeline that you had double-booked at all. The real data has this - an 11:15-12:15 block and
+   an 11:15-12:00 block on the same morning.
+   Standard calendar treatment: find each cluster of mutually-overlapping blocks, pack them into
+   the fewest lanes where no two blocks in a lane overlap, and split the width between the lanes
+   that cluster actually needs. A block with nothing over it still gets the full width, so the
+   common case looks exactly as it did.
+   Pure function of the block list so it can be reasoned about (and tested) without a DOM. */
+function layoutLanes(blocks){
+  const out={};
+  const spans=blocks.map(function(b){
+    const s=Math.max(DAY_START,toMin(b.start));
+    return {id:b.id, s:s, e:Math.max(s+1,Math.min(DAY_END,toMin(b.start)+blockDur(b)))};
+  }).sort(function(a,b){ return a.s-b.s || b.e-a.e; });
+
+  let i=0;
+  while(i<spans.length){
+    /* grow a cluster while anything in it still reaches past the next block's start */
+    let clusterEnd=spans[i].e, j=i+1;
+    while(j<spans.length&&spans[j].s<clusterEnd){ clusterEnd=Math.max(clusterEnd,spans[j].e); j++; }
+    const cluster=spans.slice(i,j);
+    /* first lane whose occupant has already finished; a new lane only when none has */
+    const laneEnds=[];
+    cluster.forEach(function(sp){
+      let lane=laneEnds.findIndex(function(end){ return end<=sp.s; });
+      if(lane<0){ lane=laneEnds.length; laneEnds.push(sp.e); }
+      else laneEnds[lane]=sp.e;
+      out[sp.id]={lane:lane};
+    });
+    cluster.forEach(function(sp){ out[sp.id].lanes=laneEnds.length; });
+    i=j;
+  }
+  return out;
+}
+/* ---------- creating a block by clicking empty time ----------
+   Blocks land on the 15-minute grid. Clicking anywhere in a free stretch starts the new block at
+   that 15-minute slot (or at the moment the free stretch begins, if the click is above the first
+   slot boundary) and runs it to the next 15-minute mark. So a meeting ending at 2:45 followed by
+   a click underneath it gives 2:45-3:00, and a meeting ending at 2:50 gives 2:50-3:00 -- the end
+   is what snaps, so blocks stay aligned to the grid even when the thing before them didn't. */
+function floor15(m){ return Math.floor(m/15)*15; }
+function ceil15(m){ return Math.ceil(m/15)*15; }
+function newBlockRange(regionStart,regionEnd,clickMin){
+  let s=regionStart;
+  if(isFinite(clickMin)){
+    const snapped=Math.max(regionStart,floor15(clickMin));
+    if(snapped<regionEnd) s=snapped;
+  }
+  let e=ceil15(s+1);                 /* strictly after s, so a slot boundary advances a full step */
+  if(e>regionEnd) e=regionEnd;
+  return (e-s>=5)?[s,e]:null;        /* a sliver too thin to hold anything isn't worth creating */
+}
+function onEmptySlotClick(ev,id){
+  /* task-placement mode owns the click: the whole grid is a drop target then */
+  if(pickedTaskId){ placePickedInBlock(id,ev); return; }
+  const b=blockOf(id); if(!b) return;
+  const host=ev.currentTarget;
+  const rect=host.getBoundingClientRect();
+  const regionStart=Math.max(DAY_START,toMin(b.start));
+  const regionEnd=Math.min(DAY_END,toMin(b.start)+blockDur(b));
+  const clickMin=regionStart+(ev.clientY-rect.top)/gridPxPerMin();
+  const range=newBlockRange(regionStart,regionEnd,clickMin);
+  if(!range){ toggleBlock(id); return; }
+  createBlockAt(fromMin(range[0]),range[1]-range[0]);
+}
 /* one small absolutely-positioned box per block, sized and placed by its real clock time on the
    fixed grid — no more elastic floor/ceiling. Clicking it opens the side detail panel instead of
    growing the box inline, which is what keeps the grid actually proportional: an expanded block
    used to blow past its real time-slot height, which a Google-Calendar-style grid can't allow. */
-function blockGridBoxHTML(b,openId){
+function blockGridBoxHTML(b,openId,lanes){
   const cur=isCurrentBlock(b), past=!cur&&isPastBlock(b), empty=isEmptyBlock(b), cleared=isBlockCleared(b);
   const col=blockColor(b);
   const isOpen=openId===b.id;
   const startMin=Math.max(DAY_START,toMin(b.start));
   const endMin=Math.min(DAY_END,toMin(b.end||fromMin(toMin(b.start)+60)));
   const top=minToPx(startMin), heightPx=Math.max(20,minToPx(endMin)-top);
+  /* settled = its time is up, or everything in it is checked off. Either way it gets a tick and
+     its label struck through, so a glance down the day separates what's handled from what isn't
+     without having to open anything. */
+  const settled=isBlockSettled(b,vday())&&!empty;
+  const lane=(lanes&&lanes[b.id])||{lane:0,lanes:1};
+  const laneW=100/Math.max(1,lane.lanes);
   const quests=blockQuests(b), btasks=blockTasksFor(b), ptasks=projectBlockTasks(b);
   /* ptasks are pulled fresh from the bank each render and are never "done" by definition (a done
      one drops out of the pull), so they'd only ever pad the denominator without a matching
@@ -4286,7 +4919,10 @@ function blockGridBoxHTML(b,openId){
   /* a project block previews whatever's currently first up in its category, instead of a fixed
      title — that's the whole point of "pulls the top task from the list" */
   const previewText=(b.type==='project'&&ptasks.length)?ptasks[0].text:(b.focus||b.calTitle||'');
-  let styleAttr='top:'+top+'px;height:'+heightPx+'px';
+  /* lanes are a percentage of the body width with a small gutter, so a cluster of three fits the
+     same column a single block would have filled */
+  let styleAttr='top:'+top+'px;height:'+heightPx+'px'+
+    ';left:calc('+(lane.lane*laneW).toFixed(4)+'% + 2px);width:calc('+laneW.toFixed(4)+'% - 4px)';
   if(!empty) styleAttr+=';background:'+col.bg+';border-color:'+col.edge;
   /* an empty auto-filler gets regenerated from scratch by buildGaps() every render (see the
      comment on that function), so dragging its edge would just get silently undone on the next
@@ -4296,17 +4932,20 @@ function blockGridBoxHTML(b,openId){
      edge, and a scroll swipe on a phone routinely starts with a finger right on one, silently
      turning "I'm scrolling" into "I'm resizing this block." Touch users still get to change a
      block's time via the start/end inputs in its detail panel. */
-  return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+(pickedTaskId?' armed':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
-    'ondragover="event.preventDefault();this.classList.add(\'drophover\')" ondragleave="this.classList.remove(\'drophover\')" ondrop="onBlockDrop(event,\''+b.id+'\')" '+
-    'onclick="'+(pickedTaskId?'placePickedInBlock(\''+b.id+'\',event)':'toggleBlock(\''+b.id+'\')')+'" '+
-    'title="'+b.start+'–'+(b.end||'')+' '+(pickedTaskId?'· tap to put the picked task here':(empty?'· click to add a focus':'· click for details'))+'">'+
+  return '<div class="gridblock'+(empty?' emptyblk':'')+(cur?' current':'')+(past?' past':'')+(cleared&&!empty?' cleared':'')+(settled?' settled':'')+(isOpen?' open':'')+(b.fromCal?' fromcal':'')+(pickedTaskId?' armed':'')+'" id="tb-'+b.id+'" style="'+styleAttr+'" '+
+    'ondragover="onBlockDragOver(event,this)" ondragleave="onBlockDragLeave(event,this)" ondrop="onBlockDrop(event,\''+b.id+'\')" '+
+    /* an empty stretch is a place to make a block, not a thing to open - clicking it carves a
+       15-minute slot at the point clicked instead of opening the filler for editing */
+    'onclick="'+(empty?'onEmptySlotClick(event,\''+b.id+'\')':(pickedTaskId?'placePickedInBlock(\''+b.id+'\',event)':'toggleBlock(\''+b.id+'\')'))+'" '+
+    'title="'+b.start+'–'+(b.end||'')+' '+(pickedTaskId?'· tap to put the picked task here':(empty?'· click to make a 15-minute block here':'· click for details'))+'">'+
     (canResize?'<div class="reshandle top" onmousedown="startBlockResize(event,\''+b.id+'\',\'top\')"></div>':'')+
     /* no clock in the label. The axis running down the left already states the time for every
        row, so repeating it inside a half-width block spent most of the width restating what was
        already on screen and pushed the focus and the task count out of view. Kept in the title
        attribute, and the detail panel still shows real start/end inputs. */
-    (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon" title="'+BLOCK_TYPE_LABEL[b.type]+' block">'+BLOCK_TYPE_ICON[b.type]+'</span>':'')+
-    (empty&&!previewText?'<span class="gfocus emptyhint">+ add focus</span>':'<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>')+
+    (settled?'<span class="blkcheck" title="finished">✓</span>':
+      (BLOCK_TYPE_ICON[b.type]?'<span class="typeicon" title="'+BLOCK_TYPE_LABEL[b.type]+' block">'+BLOCK_TYPE_ICON[b.type]+'</span>':''))+
+    (empty&&!previewText?'<span class="gfocus emptyhint">+ block</span>':'<span class="gfocus">'+String(previewText).replace(/</g,'&lt;')+'</span>')+
     (b.ruleId?'<span class="repeattag" title="'+blockRepeatLabel(b)+'">\u27f3</span>':'')+
     (totalCount?'<span class="progdot">'+doneCount+'/'+totalCount+'</span>':'')+
     (b.fromCal?'<span class="caltag">cal</span>':'')+
@@ -4470,9 +5109,27 @@ function renderFocusSession(){
   h+='</div></div>';
   el.innerHTML=h;
 }
+/* dragging a task anywhere near a block lights that block up, in the day grid and the week grid
+   alike. dragleave fires when the pointer crosses onto a *child* of the block too, which made the
+   highlight flicker off as soon as the cursor reached the label, so the leave is ignored unless
+   the pointer has genuinely left the box. */
+function onBlockDragOver(ev,el){
+  ev.preventDefault();
+  if(ev.dataTransfer) ev.dataTransfer.dropEffect='move';
+  el.classList.add('drophover');
+}
+function onBlockDragLeave(ev,el){
+  const to=ev.relatedTarget;
+  if(to&&el.contains(to)) return;
+  el.classList.remove('drophover');
+}
+function clearDropHighlights(){
+  document.querySelectorAll('.drophover').forEach(function(el){ el.classList.remove('drophover'); });
+}
 function renderTimeline(){
   const d=day(vday());
   const openId=openBlockId();
+  const lanes=layoutLanes(d.blocks||[]);
   let axis='';
   for(let m=DAY_START;m<=DAY_END;m+=60) axis+='<span class="gh" style="top:'+minToPx(m)+'px">'+fromMin(m)+'</span>';
   let body='';
@@ -4492,7 +5149,7 @@ function renderTimeline(){
         /* the re-collapse control lives in the axis column, not the body, so it never overlaps
            the individual blocks it's sitting next to — those already fill this exact span */
         axis+='<span class="gaxis-toggle" style="top:'+top+'px" onclick="toggleRollup(\''+rk+'\')" title="collapse">▾</span>';
-        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId); });
+        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId,lanes); });
       }
     }else if(seg.type==='past'){
       const rk='rollup-'+seg.run[0].id, expanded=!!manualRollup[rk];
@@ -4501,10 +5158,10 @@ function renderTimeline(){
           seg.run[0].start+'–'+seg.run[seg.run.length-1].end+' · '+seg.run.length+' block'+(seg.run.length===1?'':'s')+' earlier today</div>';
       }else{
         axis+='<span class="gaxis-toggle" style="top:'+top+'px" onclick="toggleRollup(\''+rk+'\')" title="collapse">▾</span>';
-        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId); });
+        seg.run.forEach(function(rb){ body+=blockGridBoxHTML(rb,openId,lanes); });
       }
     }else{
-      body+=blockGridBoxHTML(seg.run[0],openId);
+      body+=blockGridBoxHTML(seg.run[0],openId,lanes);
     }
   });
   /* the now line: a real absolute line across the fixed grid, at the actual live-time offset —
@@ -4514,10 +5171,33 @@ function renderTimeline(){
     const nm=nowMinutes()%1440;
     if(nm>=DAY_START&&nm<=DAY_END) body+='<div class="gridnowline" style="top:'+minToPx(nm)+'px" data-lbl="'+hhmm(new Date())+'"></div>';
   }
-  document.getElementById('timeline').innerHTML=
+  const host=document.getElementById('timeline');
+  host.innerHTML=
     '<div class="gridwrap"><div class="gridaxis" style="height:'+gridTotalPx()+'px">'+axis+'</div>'+
     '<div class="gridbody" style="height:'+gridTotalPx()+'px">'+body+'</div></div>';
+  scrollTimelineIntoView(host);
   renderBlockDetailPanel();
+}
+/* Put the interesting part of the day on screen once, not on every render - the timeline
+   re-renders on every save, and yanking the scroll position back each time would make it
+   impossible to look at the evening while ticking something off in the morning. Re-armed only
+   when the viewed day changes. */
+let timelineAnchoredFor=null;
+function scrollTimelineIntoView(host){
+  if(!host||host.scrollHeight<=host.clientHeight) return;
+  if(timelineAnchoredFor===vday()) return;
+  timelineAnchoredFor=vday();
+  /* today anchors on the current time, another day on the first thing actually scheduled */
+  let focusMin;
+  if(isViewingToday()) focusMin=nowMinutes()%1440;
+  else{
+    const real=(day(vday()).blocks||[]).filter(function(b){ return !isEmptyBlock(b); })
+      .sort(function(a,b){ return toMin(a.start)-toMin(b.start); })[0];
+    focusMin=real?toMin(real.start):DAY_START;
+  }
+  /* a third of the way down, so what is coming next is visible below it */
+  const target=minToPx(focusMin)-host.clientHeight/3;
+  host.scrollTop=Math.max(0,Math.min(host.scrollHeight-host.clientHeight,target));
 }
 /* ---------- drag-to-resize: mouse only, alongside the time-input fields ----------
    Added on top of (not instead of) the editable start/end inputs in the detail panel — inputs
@@ -4792,7 +5472,12 @@ function render(){
   document.getElementById('dayPct').textContent=overall+'%';
   document.getElementById('dayFill').style.width=overall+'%';
   renderPrismShell();
+  renderDeskSidebar();
+  /* must run before the view branches below, so the timeline and inbox are already parked in the
+     desktop panes by the time their contents are filled in */
+  syncDeskDay();
   renderPrismFocus();
+  renderDeskFocus();
   renderWeekGrid();
   renderDayRailHint();
   renderFocusSession();
@@ -5310,8 +5995,28 @@ function onTouchDragEnd(){
   reconcile(); render(); mediPaint(); maybeAutoBackup();
   applyLayoutDom(); applyCollapsedDom(); applyTheme();
   lastSnapshot=JSON.stringify(S);
+  registerServiceWorker();
+  notifyReady=notifyPermission()==='granted';
   setInterval(tickTimers,1000);
-  setInterval(function(){ if(today()!==S.lastDate){ reconcile(); render(); } },60000);
+  /* the minute hand. It used to only do anything on a date rollover, which meant a block could
+     end and keep holding its tasks until something else happened to trigger a render. Now every
+     minute: hand back what an ended block was holding, announce what's about to start, and
+     re-render if either changed something. */
+  setInterval(function(){
+    if(today()!==S.lastDate){ reconcile(); render(); return; }
+    const returned=sweepEndedBlocks(today());
+    checkBlockAlerts();
+    if(returned||isViewingToday()) render();
+  },60000);
+  /* a laptop that was asleep wakes up minutes or hours later having missed every tick, and the
+     tasks of every block that ended in the meantime are still pinned to it */
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState!=='visible') return;
+    if(today()!==S.lastDate){ reconcile(); }
+    sweepEndedBlocks(today());
+    render();
+  });
+  sweepEndedBlocks(today());
   /* these inputs only exist if the old ritual panels are still in the page — habits are added
      from inside their routine block now, so guard rather than assume */
   (S.ritualDefs||[]).forEach(function(rd){

@@ -6,6 +6,14 @@
 <title>Prism</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#07100d">
+<!-- iOS only allows notifications for a PWA that was added to the home screen, and only honours
+     standalone mode when these are present -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prism">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -17,6 +25,17 @@
      hero/tab strip takes over. Both drive the same setView() router. -->
 <div id="prismShell"></div>
 <div id="prismFocus"></div>
+<!-- Desktop-only left rail. Above 900px this replaces the hero header entirely; below it the
+     rail is hidden and the mobile shell above takes over. Both drive the same setView() router. -->
+<aside id="deskSidebar" class="desksidebar"></aside>
+<!-- Slide-over for tracker detail. Cards are physically moved in and out of #deskPanelBody by
+     syncDeskPanel(), so there is only ever one copy of each card in the document. -->
+<div id="deskPanel" class="deskpanel">
+  <div class="dphead"><span class="lbl" id="deskPanelTitle"></span>
+    <button class="btn tiny ghost" onclick="closeSheet()">✕ close</button></div>
+  <div class="dpbody" id="deskPanelBody"></div>
+</div>
+<div id="deskPanelScrim" class="deskpanelscrim" onclick="closeSheet()"></div>
 <div class="wrap">
   <div class="hero">
     <div class="left">
@@ -63,6 +82,16 @@
   <div id="offTodayBar" style="display:none"></div>
   <!-- TODAY VIEW -->
   <div id="todayView">
+  <!-- desktop only: the current block, above the timeline/inbox split -->
+  <div id="deskFocus" class="deskfocus"></div>
+  <!-- Desktop day layout. syncDeskDay() moves the real timeline and inbox cards in here and puts
+       them back below 901px. They are moved rather than rebuilt because which column a card
+       normally lives in is user state (S.layout.cols) - reading that to decide what to hide was
+       the bug this replaced. -->
+  <div id="deskDay" class="deskday">
+    <div class="ddleft" id="deskTimelinePane"></div>
+    <div class="ddright" id="deskInboxPane"></div>
+  </div>
   <div class="grid">
     <div class="col" id="todayColA" ondragover="event.preventDefault()" ondrop="onColDrop(event,0)">
       <div class="card" id="waterCard" ondragover="event.preventDefault();this.classList.add('drophover')" ondragleave="this.classList.remove('drophover')" ondrop="onCardDrop(event,'waterCard')">
@@ -243,6 +272,9 @@
   </div>
   <!-- PLANNING VIEW -->
   <div id="planningView" style="display:none">
+    <!-- the weekly calendar: blocks in their real time slots, drop targets for tasks dragged
+         out of the bank below -->
+    <div id="weekCal" class="weekcal"></div>
     <!-- the week banner: sticky, so it stays reachable while the bank scrolls under it. Tap a
          task first and these light up as targets; tap one with nothing picked to see its day. -->
     <div class="planbanner" id="planBanner"></div>

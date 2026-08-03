@@ -187,15 +187,25 @@ input,select,textarea{font-family:inherit;font-size:13px;color:var(--ink)}
   color:var(--lav-deep);cursor:pointer;transform:translateY(-4px)}
 .gridbody{position:relative;flex:1;border-left:1px solid var(--rule);margin-left:8px}
 .gridline{position:absolute;left:0;right:0;border-top:1px dashed var(--rule);pointer-events:none}
-.gridblock{position:absolute;left:4px;right:4px;border:1px solid var(--stroke);border-radius:var(--r);
-  background:var(--glass-strong);overflow:hidden;cursor:pointer;padding:3px 8px;font-size:11px;
-  display:flex;align-items:baseline;gap:6px;transition:box-shadow .15s,transform .15s}
-.gridblock:hover{box-shadow:0 3px 12px var(--rule);transform:translateY(-1px)}
-.gridblock.emptyblk{background:transparent;border-style:dashed;opacity:.55}
+/* left/width come from the inline style now (lane packing in layoutLanes) rather than being
+   pinned to both edges here, so a cluster of overlapping blocks can sit side by side */
+.gridblock{position:absolute;border:1px solid var(--stroke);border-radius:12px;
+  background:var(--glass-strong);overflow:hidden;cursor:pointer;padding:4px 9px;font-size:11px;
+  display:flex;align-items:baseline;gap:6px;transition:box-shadow .15s,transform .15s,opacity .15s}
+.gridblock:hover{box-shadow:0 3px 12px var(--rule);transform:translateY(-1px);z-index:5}
+.gridblock.emptyblk{background:transparent;border-style:dashed;opacity:.4}
+.gridblock.emptyblk:hover{opacity:.85;border-color:var(--mint-deep);background:var(--glass)}
 .gridblock.past{opacity:.55}
 .gridblock.cleared{opacity:.8}
 .gridblock.current{box-shadow:0 0 0 2px var(--pink-deep);z-index:3}
 .gridblock.open{z-index:4;box-shadow:0 0 0 2px var(--ink)}
+/* a block is settled once its time is up or everything in it is checked off */
+.gridblock.settled .gfocus{text-decoration:line-through;color:var(--ink-3);font-weight:500}
+.gridblock .blkcheck{flex:0 0 auto;font-size:11px;line-height:1;color:var(--mint-deep);font-weight:700}
+/* the drop target while a task is being dragged over it */
+.gridblock.drophover{box-shadow:0 0 0 2px var(--mint-deep),0 6px 20px var(--rule);
+  border-color:var(--mint-deep);background:var(--glass-strong);opacity:1;z-index:6;transform:translateY(-1px)}
+.gridblock.drophover .gfocus{color:var(--ink)}
 .gridblock .gtime{font-size:9.5px;font-weight:700;color:var(--ink-3);flex:0 0 auto;font-variant-numeric:tabular-nums}
 .gridblock .gfocus{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--ink)}
 .gridblock .gfocus.emptyhint{color:var(--ink-3);font-weight:400}
@@ -675,7 +685,11 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 /* progress line for the modes that carry a target (hours / timed / count) */
 .uprog{display:flex;align-items:center;gap:8px;margin:6px 0 0 23px;flex-wrap:wrap}
 .uprog .bar{flex:1 1 90px;min-width:70px;height:5px}
-.uprogread{font-size:10.5px;font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums;flex:0 0 auto}
+.uprogread{font-size:10.5px;font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums;
+  /* flex:0 0 auto refused to shrink, so in a narrow column the label pushed the whole page wider
+     than the viewport. It may shrink and wrap now; the numbers stay on one line via the nowrap
+     on the value itself. */
+  flex:0 1 auto;min-width:0;max-width:100%;overflow-wrap:anywhere}
 .uprogextra{font-weight:500;color:var(--ink-3)}
 .uprogbtns{display:flex;gap:5px;flex:0 0 auto}
 .taskrow2.done .uprog{opacity:.5}
@@ -1129,3 +1143,211 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
 /* the repeat marker on a timeline block, and the focus label now that the clock is gone */
 .repeattag{flex:none;font-size:9px;color:var(--ink-3);opacity:.8}
 .gridblock .gfocus{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ===================== desktop shell (>900px) =====================
+   The header is replaced by a fixed left rail, and the day view becomes focus-on-top with the
+   timeline and the inbox side by side underneath. Everything in here is scoped to the media
+   query, so the phone layout above is untouched.
+
+   How the tracker cards move: each one is *relocated* into the slide-over by syncDeskPanel()
+   rather than duplicated. The hiding below is therefore written as `#todayView .card` — scoped to
+   the column container, never to a card's own id. A card that has been moved out of #todayView
+   stops matching the selector and becomes visible in the panel on its own, with no second rule
+   needed to un-hide it. Hiding by id would have hidden it in the panel too. */
+:root{ --deskrail:232px; }
+.desksidebar{display:none}
+.deskpanel{display:none}
+.deskpanelscrim{display:none}
+.deskfocus{display:none}
+.deskday{display:none}
+
+@media (min-width:901px){
+  body{padding-left:var(--deskrail)}
+  .hero{display:none}
+  .wrap{max-width:1500px;padding:0 26px}
+
+  /* ---------- the rail ---------- */
+  .desksidebar{display:block;position:fixed;left:0;top:0;bottom:0;width:var(--deskrail);z-index:40;
+    background:var(--bgpage);border-right:1px solid var(--stroke);overflow-y:auto;overscroll-behavior:contain}
+  .dsinner{display:flex;flex-direction:column;gap:16px;padding:18px 14px 22px;min-height:100%}
+  .dstop{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .dsmo{font-size:9px;letter-spacing:1.8px;color:var(--ink-3)}
+  .dsdd{font-size:34px;font-weight:600;color:var(--mint-deep);letter-spacing:-1.5px;line-height:.95}
+  .dsdow{font-size:10.5px;color:var(--ink-2);margin-top:3px}
+  .dsnav{display:flex;align-items:center;gap:2px;flex:none}
+  .dsnav button{background:none;border:1px solid var(--stroke);border-radius:8px;color:var(--ink-3);
+    font-size:12px;padding:3px 6px;cursor:pointer;line-height:1.4}
+  .dsnav button:hover{color:var(--ink);border-color:var(--mint-deep)}
+  .dsnav .tdy{font-size:9px;letter-spacing:.8px;padding:4px 6px}
+
+  /* week strip: one score ring per day */
+  .dsweek{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
+  .dsdot{display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:none;
+    cursor:pointer;padding:3px 0;border-radius:8px}
+  .dsdot:hover{background:var(--glass)}
+  .dsdot .rw{position:relative;width:26px;height:26px}
+  .dsdot .rw>svg{width:26px;height:26px;transform:rotate(-90deg)}
+  .dsdot .face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:9px;color:var(--ink-3);font-weight:600}
+  .dsdot .dnum{font-size:8.5px;color:var(--ink-3)}
+  .dsdot.on{background:var(--glass-strong);box-shadow:inset 0 0 0 1px var(--stroke)}
+  .dsdot.on .face{color:var(--ink)}
+  .dsdot.istoday .dnum{color:var(--mint-deep);font-weight:700}
+
+  /* water / food / money, the three logged many times a day */
+  .dsrings{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;
+    border-top:1px dashed var(--stroke);border-bottom:1px dashed var(--stroke);padding:12px 0}
+  .dsring{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:none;
+    cursor:pointer;padding:2px 0;border-radius:10px}
+  .dsring:hover{background:var(--glass)}
+  .dsring .rw{position:relative;width:42px;height:42px}
+  .dsring .rw>svg{width:42px;height:42px;transform:rotate(-90deg)}
+  .dsring .gl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px}
+  .dsring .vl{font-size:9px;color:var(--ink-2);letter-spacing:.3px;text-align:center;line-height:1.2}
+
+  /* the once-a-day trackers, as thin bars */
+  .dsbars{display:flex;flex-direction:column;gap:3px}
+  .dsbar{display:flex;align-items:center;gap:9px;background:none;border:none;cursor:pointer;
+    padding:6px 6px;border-radius:9px;text-align:left;width:100%}
+  .dsbar:hover{background:var(--glass)}
+  .dsbar .bg{font-size:12px;flex:none;width:13px;text-align:center}
+  .dsbar .bmid{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+  .dsbar .btop{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+  .dsbar .bl{font-size:10px;color:var(--ink-2);letter-spacing:.4px}
+  .dsbar .bv{font-size:9px;color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none}
+  .dsbar .btrack{height:3px;border-radius:2px;background:var(--stroke);overflow:hidden;display:block}
+  .dsbar .bfill{height:100%;display:block;border-radius:2px;transition:width .3s}
+
+  .dspaper{display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;
+    background:var(--glass);border:1px solid var(--stroke);border-radius:10px;padding:9px 10px;
+    cursor:pointer;width:100%}
+  .dspaper:hover{border-color:var(--aqua-deep)}
+  .dspaper .pk{font-size:8.5px;letter-spacing:1.4px;color:var(--ink-3);text-transform:uppercase}
+  .dspaper .pt{font-size:11px;color:var(--ink);line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .dspaper .pstat{font-size:8.5px;letter-spacing:1px;color:var(--aqua-deep);text-transform:uppercase}
+  .dspaper.empty .pt{color:var(--ink-3)}
+
+  .dsfoot{margin-top:auto;display:flex;flex-direction:column;gap:5px;padding-top:10px;
+    border-top:1px dashed var(--stroke)}
+  .dsfoot>*{font-size:9px;letter-spacing:.4px;line-height:1.5;text-align:left}
+  .dsok{color:var(--mint-deep)}
+  .dsoff{color:var(--ink-3)}
+  .dsnotif{background:none;border:1px solid var(--stroke);border-radius:7px;color:var(--ink-2);
+    padding:5px 7px;cursor:pointer;font-size:9px}
+  .dsnotif:hover{border-color:var(--mint-deep);color:var(--ink)}
+  .dssync{color:var(--ink-3);word-break:break-word}
+
+  /* ---------- slide-over ---------- */
+  .deskpanel{display:flex;flex-direction:column;position:fixed;left:var(--deskrail);top:0;bottom:0;
+    width:400px;max-width:calc(100vw - var(--deskrail));z-index:45;background:var(--bgpage);
+    border-right:1px solid var(--stroke);box-shadow:24px 0 60px rgba(0,0,0,.5);
+    transform:translateX(-104%);transition:transform .22s cubic-bezier(.3,.9,.4,1);visibility:hidden}
+  .deskpanel.open{transform:translateX(0);visibility:visible}
+  .dphead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;
+    border-bottom:1px solid var(--stroke)}
+  .dphead .lbl{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--mint-deep)}
+  .dpbody{flex:1;overflow-y:auto;padding:14px 16px 26px}
+  .dpbody .card.inpanel{margin:0;border:none;background:none;padding:0;box-shadow:none}
+  .dpbody .card.inpanel>header{cursor:default}
+  .dpbody .card.inpanel>header .cardchev{display:none}
+  .deskpanelscrim{display:block;position:fixed;inset:0;z-index:44;background:rgba(0,0,0,.45);
+    opacity:0;pointer-events:none;transition:opacity .22s}
+  body:has(.deskpanel.open) .deskpanelscrim{opacity:1;pointer-events:auto}
+
+  /* ---------- day view: focus on top, timeline | inbox below ---------- */
+  .deskfocus{display:block}
+  .deskfocus.has{margin:16px 0 14px}
+  .dfcard{display:flex;align-items:flex-start;gap:16px;border:1px solid var(--mint-deep);
+    border-radius:16px;background:linear-gradient(180deg,var(--mint),transparent);padding:14px 16px}
+  .dfcard.locked{border-color:var(--pink-deep);background:linear-gradient(180deg,var(--pink),transparent)}
+  .dfcard.empty{display:block;border-style:dashed;border-color:var(--stroke);background:var(--glass)}
+  .dfnow{font-size:13px;color:var(--ink-2)}
+  .dfnext{font-size:11px;color:var(--ink-3);margin-top:4px}
+  .dfring{position:relative;width:74px;height:74px;flex:none}
+  .dfring>svg{width:74px;height:74px;transform:rotate(-90deg)}
+  .dfmin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .dfmin b{font-size:21px;font-weight:600;color:var(--mint-deep);line-height:1}
+  .dfmin i{font-size:8px;font-style:normal;letter-spacing:1px;color:var(--ink-3)}
+  .dfmain{flex:1;min-width:0}
+  .dfk{font-size:8.5px;letter-spacing:2.4px;text-transform:uppercase;color:var(--pink-deep)}
+  .dft{font-size:17px;font-weight:600;color:var(--ink);margin-top:2px;line-height:1.25}
+  .dfmeta{font-size:10.5px;color:var(--ink-3);margin-top:3px;font-variant-numeric:tabular-nums}
+  /* the list scrolls rather than growing the card without limit; the mask fades the row at the
+     boundary so a half-visible task reads as "more below" instead of as a clipped layout */
+  .dftasks{display:flex;flex-direction:column;gap:1px;margin-top:10px;
+    max-height:184px;overflow-y:auto;padding-right:4px;
+    mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent);
+    -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 22px),transparent)}
+  .dftasks:hover{mask-image:none;-webkit-mask-image:none}
+  .dfbtns{display:flex;flex-direction:column;gap:6px;flex:none}
+  .dfgo{min-width:104px;padding:10px 14px;background:var(--mint-deep);color:var(--bgpage);border:none;
+    border-radius:10px;font-size:12px;font-weight:700;letter-spacing:1.2px;cursor:pointer}
+  .dfgo.on{background:var(--pink-deep)}
+  .dfalt{min-width:104px;padding:9px 14px;background:none;border:1px solid var(--stroke);
+    border-radius:10px;color:var(--ink-2);font-size:11px;cursor:pointer}
+  .dfalt:hover{border-color:var(--mint-deep);color:var(--ink)}
+
+  /* the card grid stands down entirely; syncDeskDay() has moved the two cards that matter into
+     the panes below, and everything else is reachable from the rail's slide-over */
+  #todayView .grid{display:none}
+  .deskday{display:none}
+  .deskday.on{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;
+    align-items:start;padding-bottom:26px}
+  .ddleft,.ddright{min-width:0;display:flex;flex-direction:column;gap:14px}
+  .deskday .card.indesk{margin:0}
+  /* the timeline pane fits the viewport and scrolls inside itself; auto-zoom (gridPxPerMin) sizes
+     the day so the active window lands inside this height without a scrollbar in normal use */
+  .deskday .timeline{max-height:calc(100vh - 264px);overflow-y:auto;overscroll-behavior:contain}
+  .deskday #todayTasksCard{max-height:calc(100vh - 264px);display:flex;flex-direction:column}
+  .deskday #todayTasksList{overflow-y:auto;min-height:0}
+}
+
+/* one task inside a block: checkbox, its own timer, and its subtasks */
+.btrow{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:8px;flex-wrap:wrap}
+.btrow:hover{background:var(--glass)}
+.btrow.running{background:var(--mint);box-shadow:inset 0 0 0 1px var(--mint-deep)}
+.btbox{width:16px;height:16px;flex:none;border:1px solid var(--stroke);border-radius:5px;
+  background:none;color:var(--bgpage);font-size:10px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center}
+.btbox.sm{width:13px;height:13px;font-size:8px}
+.btrow.done>.btbox,.btsub.done>.btbox{background:var(--mint-deep);border-color:var(--mint-deep)}
+.btrow .bttext{flex:1;min-width:0;font-size:12px;color:var(--ink-2);line-height:1.35;word-break:break-word}
+.btrow.done>.bttext{color:var(--ink-3);text-decoration:line-through}
+.btel{font-size:9.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none}
+.btplay{flex:none;width:24px;height:24px;border-radius:7px;border:1px solid var(--stroke);
+  background:none;color:var(--ink-3);font-size:9px;cursor:pointer;line-height:1;
+  display:flex;align-items:center;justify-content:center}
+.btplay:hover{border-color:var(--mint-deep);color:var(--mint-deep)}
+.btplay.on{background:var(--mint-deep);border-color:var(--mint-deep);color:var(--bgpage)}
+.btplay.sm{width:20px;height:20px;font-size:8px}
+.btsubs{flex-basis:100%;margin-left:24px;border-left:1px solid var(--rule);padding-left:9px;
+  display:flex;flex-direction:column;gap:1px;margin-top:2px}
+.btsub{display:flex;align-items:center;gap:7px;padding:3px 0}
+.btsub .bttext{font-size:11px;color:var(--ink-3);flex:1;min-width:0}
+.btsub.done .bttext{text-decoration:line-through}
+
+/* the weekly calendar on the week tab: same grid as the phone overlay, without the overlay */
+.weekcal{margin-bottom:18px}
+.wcbar{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+.wcttl{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:var(--mint-deep)}
+.wcnav{display:flex;gap:6px}
+.wcnav button{background:none;border:1px solid var(--stroke);border-radius:8px;color:var(--ink-3);
+  font-size:10px;padding:4px 9px;cursor:pointer}
+.wcnav button:hover{color:var(--ink);border-color:var(--mint-deep)}
+.wchint{font-size:10px;color:var(--ink-3);margin-bottom:9px}
+.wcscroll{overflow:auto;border:1px solid var(--stroke);border-radius:14px;background:var(--glass);
+  max-height:calc(100vh - 300px)}
+.wcscroll .wggrid{min-width:660px}
+.wcscroll .wgcolhead{cursor:pointer}
+.wgblk.settled .wgt{text-decoration:line-through;opacity:.65}
+.wgchk{font-size:9px;color:var(--mint-deep);font-weight:700;margin-right:3px}
+.wgn2{position:absolute;right:3px;bottom:2px;font-size:8px;color:var(--ink-3)}
+.wgblk.drophover{box-shadow:0 0 0 2px var(--mint-deep),0 4px 14px var(--rule);
+  border-color:var(--mint-deep);z-index:6}
+
+/* The timeline grid has a min-width so the axis and the block bodies stay legible. In the narrow
+   two-up card grid a phone still gets, that min-width is wider than its column, which pushed the
+   whole page sideways. Let the timeline scroll within its own column instead of widening the
+   document - a horizontally scrolling page makes every vertical swipe feel broken. */
+@media (max-width:900px){ .timeline{overflow-x:auto;max-width:100%} }
