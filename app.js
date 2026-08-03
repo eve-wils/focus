@@ -53,7 +53,7 @@ const CARD_COL_IDS=['todayColA','todayColB','todayColC', 'weekColA', 'weekColB',
 const DEFAULT_LAYOUT_COLS=[
   ['card-day'],
   ['todayTasksCard'],
-  ['questCard'],
+  ['questCard','intentionsCard'],
   ['taskBankCard'],
   ['weekPlanCard'],
   ['futureLogCard'],
@@ -309,6 +309,7 @@ function backfillLayout(){
      stuck on it with no UI path left to undo that, so it's force-cleared here every load. */
   if(S.layout.collapsed['card-day']) delete S.layout.collapsed['card-day'];
   relocateHabitCard();
+  relocateIntentionsCard();
 }
 /* v:5 — SCAN leads with the day now, not the habit grid. On the phone the columns stack, so
    whatever sits in the first today-column is what you land on, and the mock puts the habit grid
@@ -329,6 +330,19 @@ function relocateHabitCard(){
      layout bug rather than as space. Spread what's left across the two free columns. */
   if(!S.layout.cols[2].length&&S.layout.cols[1].length>1) S.layout.cols[2].push(S.layout.cols[1].pop());
   S.habitCardMovedAt=Date.now();
+}
+/* v:5 — the day view is a half-width timeline with today's tasks in the other half, so the second
+   today-column must lead with the tasks. intentionsCard was never in DEFAULT_LAYOUT_COLS, which
+   meant applyLayoutDom left it parked wherever the static HTML put it — the same column, above the
+   tasks. Now it is placed like every other card, in the full-width row underneath. */
+function relocateIntentionsCard(){
+  if(S.intentionsMovedAt) return;
+  for(let i=0;i<S.layout.cols.length;i++){
+    const at=S.layout.cols[i].indexOf('intentionsCard');
+    if(at>=0) S.layout.cols[i].splice(at,1);
+  }
+  if(S.layout.cols[2].indexOf('intentionsCard')<0) S.layout.cols[2].push('intentionsCard');
+  S.intentionsMovedAt=Date.now();
 }
 /* v:5 — the redesign replaced the palette outright, so a theme saved under the old system is
    dropped rather than merged: half-migrating it would leave light-mode pinks on a black page.
@@ -1789,6 +1803,8 @@ function unitCtlHTML(t,ctx){
   const inNow=!!at&&at===nowId;
   const onDay=isRecurring(t)?(dueOnDay(t,k)||!!at):(t.day===k);
   const el=taskElapsed(t), want=unitPrimary(ctx), open=editing==='more:'+id;
+  /* only real tasks nest; a ritual habit or a side quest has no subtask model behind it */
+  const isTask=t.kind==='task';
   let h='';
   /* state reads as text, not as more buttons competing for the eye */
   if(el>0||running) h+='<span class="tclock"'+(running?' data-timer-live-task="'+id+'"':'')+'>'+mmss(el)+'</span>';
@@ -1803,6 +1819,12 @@ function unitCtlHTML(t,ctx){
     h+='<button class="arrowbtn wide" title="put it on the day you\u2019re viewing" onclick="itemToDay(\''+id+'\',event)">\u2192 '+vdayLabel().toLowerCase()+'</button>';
   if(want.indexOf('skip')>=0&&isRecurring(t))
     h+='<button class="arrowbtn wide'+(sk?' on':'')+'" title="skip just this day \u2014 your streak stays safe" onclick="skipItem(\''+id+'\',event)">'+(sk?'unskip':'skip')+'</button>';
+  /* subtasks used to be reachable only by opening ⋯ first, which made a core action feel like a
+     hidden setting. This puts it on the row, showing the child count once there are any. */
+  if(isTask){
+    const nkids=subtasksOf(t).length;
+    h+='<button class="subbtn'+(editing==='subs:'+id?' on':'')+'" title="subtasks" onclick="event.stopPropagation();toggleEdit(\'subs:'+id+'\')">+ sub'+(nkids?' \u00b7 '+nkids:'')+'</button>';
+  }
   h+='<button class="morebtn'+(open?' on':'')+'" title="more actions" onclick="event.stopPropagation();toggleEdit(\'more:'+id+'\')">\u22ef</button>';
   h+=reorderArrowsHTML(t);
   h+='<button class="drag'+(isPicked(id)?' picked':'')+'" title="tap to pick it up, then tap a day or a block" onclick="pickTask(\''+id+'\',event)">\u283f</button>';
@@ -4404,6 +4426,7 @@ function taskRowHTML(t, ctx){
     (editing==='sess:'+t.id?sessEditorHTML(t.id):'')+
     (editing==='mode:'+t.id?modeEditorHTML(t.id):'')+
     (editing==='dayp:'+t.id?dayPickerHTML(t.id):'')+
+    (editing==='subs:'+t.id?subtaskRowsHTML(t):'')+
     '</div>';
 }
 function renderTaskChip(t){
@@ -4423,6 +4446,7 @@ function renderTaskChip(t){
     (editing==='sess:'+t.id?sessEditorHTML(t.id):'')+
     (editing==='mode:'+t.id?modeEditorHTML(t.id):'')+
     (editing==='dayp:'+t.id?dayPickerHTML(t.id):'')+
+    (editing==='subs:'+t.id?subtaskRowsHTML(t):'')+
     '</div>';
 }
 function renderTaskBank(){
