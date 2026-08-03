@@ -1224,7 +1224,7 @@ function hydrateState(){
   backfillCategories(); backfillLayout(); backfillTheme(); backfillMovement(); backfillWeekNotes();
   backfillRitualDefs(); backfillBlockTypes();
   /* v:5 additions — each idempotent and null-safe, same convention as the ones above */
-  backfillTxns(); backfillWaterGoal(); backfillMeals(); backfillLogEntries(); backfillPinning();
+  backfillTxns(); backfillWaterGoal(); backfillMeals(); backfillFoodCats(); backfillLogEntries(); backfillPinning();
   backfillBlockRules();
   if(S.readGoal===undefined) S.readGoal=150;
   if(S.mediBestSec===undefined) S.mediBestSec=0;
@@ -3998,12 +3998,54 @@ function habitStreak(habitId){
    nothing at all scores 0. Days in the future score 0, never partial. */
 const FOOD_HEALTHY=['veggies','protein','berries','greens','dairy'];
 const FOOD_POOR=['sugary','fried','starch'];
-/* 'grains' is in neither list on purpose: a neutral filler that shouldn't reward or penalise. */
+/* 'grains' is in neither list on purpose: a neutral filler that shouldn't reward or penalise.
+   Those two arrays are the seed only. What actually counts is S.foodCats, which starts as a copy
+   of the chip list and is editable. Scoring reads that list rather than the constants, so a
+   category you add is scored exactly like a built-in one. */
+function foodCats(){
+  if(!Array.isArray(S.foodCats)||!S.foodCats.length) backfillFoodCats();
+  return S.foodCats;
+}
+function backfillFoodCats(){
+  if(Array.isArray(S.foodCats)&&S.foodCats.length) return;
+  S.foodCats=FOOD_CHIP_SEED.map(function(c){ return {id:c.id, cls:c.cls}; });
+}
+function foodCatCls(id){
+  const c=foodCats().filter(function(x){ return x.id===id; })[0];
+  if(c) return c.cls;
+  /* a category logged before it was deleted still has to score the way it did at the time */
+  if(FOOD_HEALTHY.indexOf(id)>=0) return 'good';
+  if(FOOD_POOR.indexOf(id)>=0) return 'bad';
+  return '';
+}
+function addFoodCat(name,cls){
+  const nv=String(name||'').trim().toLowerCase();
+  if(!nv) return;
+  if(foodCats().some(function(c){ return c.id===nv; })){ toast('That category already exists'); return; }
+  S.foodCats.push({id:nv, cls:(cls==='good'||cls==='bad')?cls:''});
+  save(); render(); toast('Added '+nv);
+}
+function submitFoodCat(){
+  const el=document.getElementById('newFoodCat'), sel=document.getElementById('newFoodCatCls');
+  if(!el) return;
+  addFoodCat(el.value,sel&&sel.value);
+  el.value='';
+}
+/* deleting only takes it out of the picker - meals already logged keep their categories, and
+   foodCatCls falls back to the seed lists so an old day's score doesn't silently change */
+function delFoodCat(id,ev){
+  if(ev) ev.stopPropagation();
+  if(!arm('fc:'+id)) return;
+  S.foodCats=foodCats().filter(function(c){ return c.id!==id; });
+  mealDraft=mealDraft.filter(function(x){ return x!==id; });
+  armed=null; save(); render();
+}
 function foodScore(k){
   const dd=S.days[k]; if(!dd||!dd.meals||!dd.meals.length) return null;
   let good=0, bad=0;
   dd.meals.forEach(function(m){ (m.cats||[]).forEach(function(c){
-    if(FOOD_HEALTHY.indexOf(c)>=0) good++; else if(FOOD_POOR.indexOf(c)>=0) bad++;
+    const cls=foodCatCls(c);
+    if(cls==='good') good++; else if(cls==='bad') bad++;
   }); });
   if(!good&&!bad) return null;
   return good/(good+bad);
@@ -4585,6 +4627,15 @@ function syncDeskDay(){
   if(!wrap) return;
   const on=isDesktopLayout()&&viewMode==='today';
   wrap.classList.toggle('on',on);
+  /* The drawer is position:fixed, so where it sits in the DOM has no bearing on where it draws -
+     but it does decide whether it draws at all. It lives inside .grid, the desktop hides .grid,
+     and display:none takes the whole subtree with it, fixed children included. The result was a
+     panel that opened (display:block, 12KB of markup) and measured 0x0, so clicking a block
+     looked like it did nothing. Parking it on <body> keeps it out of any hidden ancestor.
+     Handled before the day-view gate below so a block opened from the week grid or the focus
+     screen gets a visible drawer too. */
+  if(isDesktopLayout()) relocateNode('blockDetailPanel',document.body);
+  else restoreNode('blockDetailPanel');
   if(!on){
     const had=['card-day','todayTasksCard'].filter(function(id){ return domHomes[id]; });
     ['card-day','todayTasksCard'].forEach(restoreNode);
@@ -4594,8 +4645,6 @@ function syncDeskDay(){
     if(had.length) applyLayoutDom();
     return;
   }
-  /* blockDetailPanel is deliberately not moved: it is already position:fixed, a right-hand drawer
-     that works the same on both layouts, and putting it in a column would break that. */
   const moved=relocateNode('card-day',document.getElementById('deskTimelinePane'),'indesk')
     |relocateNode('todayTasksCard',document.getElementById('deskInboxPane'),'indesk');
   /* the timeline only gains its scrollable height once it is in the pane, so the first anchor
@@ -4667,7 +4716,7 @@ function submitTxnCat(){
   const el=document.getElementById('newTxnCat'); if(!el) return;
   addTxnCat(el.value); el.value='';
 }
-const FOOD_CHIPS=[
+const FOOD_CHIP_SEED=[
   {id:'veggies',cls:'good'},{id:'protein',cls:'good'},{id:'berries',cls:'good'},
   {id:'greens',cls:'good'},{id:'dairy',cls:'good'},{id:'grains',cls:''},
   {id:'starch',cls:'bad'},{id:'fried',cls:'bad'},{id:'sugary',cls:'bad'}
@@ -4769,10 +4818,23 @@ function renderSheets(){
       '<div class="psbig"><span class="v" style="font-size:24px;color:'+col+'">'+verdict+'</span>'+
         '<span class="u">'+(d.meals||[]).length+' MEAL'+((d.meals||[]).length===1?'':'S')+' TODAY</span></div>'+
       '<div class="pssec">&gt; select composition</div>'+
-      '<div class="pschips">'+FOOD_CHIPS.map(function(c){
-        return '<button class="pschip '+c.cls+(mealDraft.indexOf(c.id)>=0?' on':'')+
-          '" onclick="toggleMealCat(\''+c.id+'\')">'+c.id.toUpperCase()+'</button>';
+      '<div class="pschips">'+foodCats().map(function(c){
+        const armd=armed==='fc:'+c.id;
+        return '<span class="pschipwrap"><button class="pschip '+c.cls+(mealDraft.indexOf(c.id)>=0?' on':'')+
+          '" onclick="toggleMealCat(\''+c.id+'\')">'+String(c.id).toUpperCase()+'</button>'+
+          '<button class="pschipx" title="remove this category" onclick="delFoodCat(\''+c.id+'\',event)">'+
+          (armd?'!':'\u00d7')+'</button></span>';
       }).join('')+'</div>'+
+      '<div class="psaddcat">'+
+        '<input id="newFoodCat" placeholder="new category…" maxlength="18" '+
+          'onkeydown="if(event.key===\'Enter\')submitFoodCat()">'+
+        '<select id="newFoodCatCls">'+
+          '<option value="good">counts as good</option>'+
+          '<option value="">neutral</option>'+
+          '<option value="bad">counts as poor</option>'+
+        '</select>'+
+        '<button class="btn tiny" onclick="submitFoodCat()">add</button>'+
+      '</div>'+
       '<button class="psbtn" onclick="saveMeal()">LOG MEAL</button>'+
       '<div class="pslist">'+meals+'</div>';
   }

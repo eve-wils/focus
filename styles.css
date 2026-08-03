@@ -1466,3 +1466,36 @@ body.touchdragging .dropzone{height:34px;background:var(--mint)}
   .dsnav2 button:hover{color:var(--ink);background:var(--glass)}
   .dsnav2 button.on{color:var(--bgpage);background:var(--mint-deep);font-weight:700}
 }
+
+/* ---------- cards inside the desktop slide-over ----------
+   These cards were laid out for a full-width column, so in a 400px panel their multi-column
+   internals collapsed: the habit streak grid put its two routines side by side and squeezed the
+   habit *names* to zero width, leaving a wall of unlabelled dots. Anything column-based inside
+   the panel stacks instead. */
+@media (min-width:761px){
+  .deskpanel{width:440px}
+  /* the panel already names what it is showing; the card repeating it read as a duplicate title */
+  .dpbody .card.inpanel>header{display:none}
+  .dpbody .card.inpanel .hscols{flex-direction:column;gap:14px}
+  .dpbody .card.inpanel .hscompact .hsname{font-size:11px}
+  .dpbody .card.inpanel .hsdot{width:12px;height:12px}
+  .dpbody .card.inpanel .meditabs,
+  .dpbody .card.inpanel .chiprow{flex-wrap:wrap}
+  .dpbody .card.inpanel input,
+  .dpbody .card.inpanel textarea,
+  .dpbody .card.inpanel select{max-width:100%}
+  /* the ritual-block form sat beside the streak columns and got the same squeeze */
+  .dpbody .card.inpanel .hsaddwrap{flex-direction:column;align-items:stretch;gap:6px}
+}
+
+/* a food category chip and its remove button, plus the add-a-category row */
+.pschipwrap{display:inline-flex;align-items:center;gap:2px}
+.pschipx{background:none;border:none;color:var(--ink-3);font-size:12px;line-height:1;
+  cursor:pointer;padding:2px 4px;border-radius:6px}
+.pschipx:hover{color:var(--alert);background:var(--glass)}
+.psaddcat{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;
+  padding-top:10px;border-top:1px dashed var(--stroke)}
+.psaddcat input{flex:1;min-width:110px;background:var(--glass);border:1px solid var(--stroke);
+  border-radius:8px;color:var(--ink);font:inherit;font-size:11px;padding:7px 9px}
+.psaddcat select{background:var(--glass);border:1px solid var(--stroke);border-radius:8px;
+  color:var(--ink-2);font:inherit;font-size:10.5px;padding:7px 6px}
